@@ -75,3 +75,47 @@ test('rsvp CLI command attaches the exact deposit', () => {
   assert.match(c.rsvpCommand('ev.testnet', D), /ev\.testnet rsvp .* attached-deposit '0\.1 NEAR'/);
   assert.match(c.rsvpCommand('ev.testnet', '1000000000000000000000001'), /'1\.000000000000000000000001 NEAR'/);
 });
+
+// ---- wallet sign-in + QR check-in ----
+const sum = (o = {}) => c.eventSummary(info(o), 50n);
+test('guestAction: sign in → RSVP → cancel/QR → checked in', () => {
+  assert.equal(c.guestAction(sum(), null, null).kind, 'signin');
+  assert.deepEqual(c.guestAction(sum(), null, 'alice.testnet'), { kind: 'rsvp', label: 'RSVP: lock 0.1 NEAR' });
+  assert.equal(c.guestAction(sum(), 'Cancelled', 'alice.testnet').kind, 'rsvp', 'a cancelled guest may RSVP again (contract allows it)');
+  const cancel = c.guestAction(sum(), 'Rsvp', 'alice.testnet');
+  assert.equal(cancel.kind, 'cancel'); assert.match(cancel.label, /refund 0\.1 NEAR/); assert.match(cancel.note, /QR/);
+  assert.equal(c.guestAction(sum(), 'CheckedIn', 'alice.testnet').disabled, true);
+  assert.equal(c.guestAction(sum({ settled: true }), null, null).kind, 'none');
+  assert.equal(c.guestAction(sum({ active: 10 }), null, 'bob.testnet').label, 'Event full');
+});
+test('check-in QR payload round-trips and rejects junk / wrong event', () => {
+  const p = c.checkinPayload('ev.testnet', 'alice.testnet');
+  assert.equal(p, 'showup:checkin?event=ev.testnet&guest=alice.testnet');
+  assert.deepEqual(c.parseCheckinPayload(p, 'ev.testnet'), { event: 'ev.testnet', guest: 'alice.testnet' });
+  assert.deepEqual(c.parseCheckinPayload(' alice.testnet ', 'ev.testnet'), { event: 'ev.testnet', guest: 'alice.testnet' }, 'bare account id is accepted');
+  assert.throws(() => c.parseCheckinPayload(p, 'other.testnet'), /not this event/);
+  assert.throws(() => c.parseCheckinPayload('https://evil.example/?x'), /not a ShowUp/);
+  assert.throws(() => c.parseCheckinPayload('showup:checkin?event=ev.testnet&guest=<script>'), /not a ShowUp|bad account/);
+  assert.throws(() => c.checkinPayload('ev.testnet', 'Bad Name'), /bad account/);
+});
+test('checkinCheck mirrors the contract check_in requires', () => {
+  const i = info({ host: 'host.testnet', checkers: ['door.testnet'], checkin_start_ns: '100', checkin_end_ns: '200' });
+  const at = (o) => c.checkinCheck(i, { checker: 'door.testnet', status: 'Rsvp', nowNs: 150n, ...o });
+  assert.deepEqual(at({}), { ok: true });
+  assert.ok(c.checkinCheck(i, { checker: 'host.testnet', status: 'Rsvp', nowNs: 150n }).ok);
+  assert.match(at({ checker: null }).reason, /Sign in/);
+  assert.match(at({ checker: 'rando.testnet' }).reason, /not the host or a checker/);
+  assert.match(at({ nowNs: 99n }).reason, /not opened/);
+  assert.match(at({ nowNs: 201n }).reason, /over/);
+  assert.match(at({ status: 'CheckedIn' }).reason, /Already/);
+  assert.match(at({ status: 'Cancelled' }).reason, /cancelled/);
+  assert.match(at({ status: null }).reason, /No RSVP/);
+});
+test('wallet bundle is lazy: only loaded after a wallet was used or on wallet redirect', () => {
+  const store = (o) => ({ getItem: (k) => o[k] ?? null });
+  assert.equal(c.walletWasUsed(store({}), ''), false);
+  assert.equal(c.walletWasUsed(store({ 'near-wallet-selector:selectedWalletId': '"my-near-wallet"' }), ''), true);
+  assert.equal(c.walletWasUsed(store({}), '?account_id=a.testnet&all_keys=x'), true);
+  assert.equal(c.walletWasUsed(store({}), '?transactionHashes=abc'), true);
+  assert.equal(c.walletWasUsed(undefined, ''), false);
+});

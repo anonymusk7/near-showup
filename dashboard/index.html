@@ -27,7 +27,7 @@ async function load(id) {
     const s = eventSummary(info, BigInt(Date.now()) * 1_000_000n), p = projectPayouts(info, guests);
     const tile = (v, l) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`;
     out.innerHTML = `<h2>${e(id)} <small>${e(s.phaseLabel)}</small></h2>
-      <p><small>host ${e(info.host)} · cancel deadline ${e(s.cancelDeadline)} · check-in ${e(new Date(Number(BigInt(info.checkin_start_ns) / 1000000n)).toISOString())} → ${e(new Date(Number(BigInt(info.checkin_end_ns) / 1000000n)).toISOString())}</small></p>
+      <p><small>host ${e(info.host)} · cancel deadline ${e(s.cancelDeadline)} · check-in ${e(new Date(Number(BigInt(info.checkin_start_ns) / 1000000n)).toISOString())} → ${e(new Date(Number(BigInt(info.checkin_end_ns) / 1000000n)).toISOString())}</small> · <a href="checkin.html?event=${encodeURIComponent(id)}">Door check-in (QR) →</a></p>
       <div class="tiles">${tile(s.depositNear + ' NEAR', 'deposit')}${tile(`${info.active}/${info.capacity}`, 'active / capacity')}${tile(s.spotsLeft, 'spots left')}
       ${tile(p.tally.CheckedIn, 'checked in')}${tile(p.tally.Rsvp, info.settled ? 'no-shows' : 'not yet checked in')}${tile(p.tally.Cancelled, 'cancelled')}
       ${tile(formatNear(p.held, 4) + ' NEAR', 'held for settle')}${tile('+' + formatNear(p.bonus, 6), 'bonus per attendee')}</div>

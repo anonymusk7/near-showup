@@ -101,9 +101,60 @@ export function rsvpCommand(eventId, depositYocto) {
   return `near contract call-function as-transaction ${eventId} rsvp json-args '{}' prepaid-gas '30.0 Tgas' attached-deposit '${formatNear(depositYocto, 24)} NEAR' sign-as <your-account>.testnet network-config testnet sign-with-keychain send`;
 }
 
+// ---- wallet sign-in + QR check-in (pure helpers; DOM glue below) ----
+const ACCOUNT_RE = /^(?=.{2,64}$)(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
+export const isAccountId = (s) => typeof s === 'string' && ACCOUNT_RE.test(s);
+
+/** What the guest's main button should do, given the event, their on-chain status and whether a wallet is signed in. */
+export function guestAction(s, status, accountId) {
+  if (!accountId) return s.canRsvp ? { kind: 'signin', label: 'Sign in with NEAR wallet to RSVP' } : { kind: 'none', label: s.phaseLabel, disabled: true };
+  if (status === 'CheckedIn') return { kind: 'none', label: 'Checked in ✓', disabled: true, note: 'You showed up. Your deposit plus a share of the no-show pool is paid out at settle.' };
+  if (status === 'Rsvp') {
+    if (s.phase === 'open') return { kind: 'cancel', label: `Cancel RSVP (refund ${s.depositNear} NEAR)`, note: 'You\'re in. Show the QR code at the door to check in.' };
+    return { kind: 'none', label: 'RSVPed', disabled: true, note: s.phase === 'checkin' || s.phase === 'closed' ? 'You\'re in. Show the QR code at the door to check in.' : 'This event has ended.' };
+  }
+  if (s.canRsvp) return { kind: 'rsvp', label: `RSVP: lock ${s.depositNear} NEAR` };
+  return { kind: 'none', label: s.spotsLeft === 0 && s.phase === 'open' ? 'Event full' : s.phaseLabel, disabled: true };
+}
+
+/** The QR text a guest shows at the door. It identifies the guest; the host still checks the face/name (see README limits). */
+export function checkinPayload(eventId, guest) {
+  if (!isAccountId(eventId) || !isAccountId(guest)) throw new Error('bad account id');
+  return `showup:checkin?event=${eventId}&guest=${guest}`;
+}
+export function parseCheckinPayload(text, expectEvent) {
+  const m = /^showup:checkin\?event=([^&\s]+)&guest=([^&\s]+)$/.exec(String(text).trim());
+  if (!m) { if (isAccountId(String(text).trim())) return { event: expectEvent ?? null, guest: String(text).trim() }; throw new Error('not a ShowUp check-in code'); }
+  const [, event, guest] = m;
+  if (!isAccountId(event) || !isAccountId(guest)) throw new Error('bad account id in code');
+  if (expectEvent && event !== expectEvent) throw new Error(`code is for ${event}, not this event`);
+  return { event, guest };
+}
+/** Pre-flight for the door: mirrors the contract's check_in requires so the host sees the reason before signing. */
+export function checkinCheck(info, { checker, status, nowNs }) {
+  if (!checker) return { ok: false, reason: 'Sign in as the host or a checker first.' };
+  if (checker !== info.host && !(info.checkers || []).includes(checker)) return { ok: false, reason: `${checker} is not the host or a checker for this event.` };
+  const now = BigInt(nowNs);
+  if (now < BigInt(info.checkin_start_ns)) return { ok: false, reason: 'Check-in has not opened yet.' };
+  if (now > BigInt(info.checkin_end_ns)) return { ok: false, reason: 'The check-in window is over.' };
+  if (status === 'CheckedIn') return { ok: false, reason: 'Already checked in.' };
+  if (status !== 'Rsvp') return { ok: false, reason: status === 'Cancelled' ? 'This guest cancelled.' : 'No RSVP for this guest.' };
+  return { ok: true };
+}
+const WALLET_KEYS = ['near-wallet-selector:selectedWalletId', 'near-wallet-selector:recentlySignedInWallets'];
+/** Load the 1.8 MB wallet bundle only once someone has used a wallet here or is returning from one. */
+export function walletWasUsed(storage, search = '') {
+  try { if (WALLET_KEYS.some((k) => { const v = storage?.getItem(k); return v && v !== 'null' && v !== '[]'; })) return true; } catch {}
+  return /[?&](account_id|transactionHashes|errorCode)=/.test(search);
+}
+export const loadWallet = (opts) => import(new URL('vendor/wallet.js', import.meta.url).href).then((m) => m.initWallet(opts));
+export const qrDataUrl = (text) => import(new URL('vendor/qr.js', import.meta.url).href).then((m) => m.toDataURL(text));
+export const explorerTx = (h) => `https://testnet.nearblocks.io/txns/${h}`;
+
 export function renderCard(eventId, s) {
   const e = escapeHtml;
   const opts = ORIGINS.map((o) => `<option value="${o.id}">${e(o.label)}</option>`).join('');
+  const pct = s.capacity ? Math.round((100 * s.active) / s.capacity) : 0;
   return `<div class="card">
   <div class="head"><strong>${e(eventId)}</strong><span class="pill ${s.phase}">${e(s.phaseLabel)}</span></div>
   <dl>
@@ -111,23 +162,41 @@ export function renderCard(eventId, s) {
     <div><dt>Capacity</dt><dd data-k="capacity">${s.capacity}</dd></div>
     <div><dt>Spots left</dt><dd data-k="spots">${s.spotsLeft}</dd></div>
   </dl>
+  <div class="bar" title="${s.active} of ${s.capacity} spots taken"><i style="width:${pct}%"></i></div>
   <p class="fine">Show up and get your deposit back plus a share of the no-shows' deposits. ${s.phase === 'open' ? `You can cancel for a full refund until ${e(s.cancelDeadline.replace('T', ' ').slice(0, 16))} UTC.` : 'RSVPs are closed.'}</p>
+  <div class="who" hidden></div>
   <button class="rsvp" ${s.canRsvp ? '' : 'disabled'}>${s.canRsvp ? `RSVP: lock ${e(s.depositNear)} NEAR` : e(s.phaseLabel)}</button>
-  <pre class="cmd" hidden></pre>
+  <p class="note" hidden></p>
+  <div class="qr" hidden></div>
+  ${s.canRsvp ? `<details class="cli"><summary>Prefer a terminal?</summary><pre class="cmd"></pre></details>` : ''}
   ${s.canRsvp ? `<div class="pay"><label>Pay from any chain (1Click preview) <select name="origin">${opts}</select></label><div class="quote">…</div></div>` : ''}
 </div>`;
 }
 
-export const CSS = `:host{all:initial;font:14px/1.4 system-ui,sans-serif;color:#111}
-.card{border:1px solid #ddd;border-radius:12px;padding:16px;max-width:380px;background:#fff}
-.head{display:flex;justify-content:space-between;align-items:center;gap:8px;word-break:break-all}
-.pill{font-size:12px;padding:2px 8px;border-radius:99px;background:#eee;white-space:nowrap}.pill.open{background:#d9f7e3}.pill.settled{background:#e3e8ff}
-dl{display:flex;gap:16px;margin:12px 0}dt{font-size:12px;color:#666}dd{margin:0;font-weight:600}
-.fine{font-size:12px;color:#555}button{width:100%;padding:10px;border:0;border-radius:8px;background:#111;color:#fff;font-weight:600;cursor:pointer}
-button[disabled]{background:#999;cursor:default}.cmd{white-space:pre-wrap;word-break:break-all;font-size:11px;background:#f6f6f6;padding:8px;border-radius:6px}
-.pay{margin-top:12px;font-size:13px}.quote{margin-top:6px;color:#333}.err{color:#b00}`;
+export const CSS = `:host{all:initial;font:14px/1.45 ui-sans-serif,system-ui,-apple-system,sans-serif;color:#0f172a}
+*{box-sizing:border-box}
+.card{border:1px solid #e2e8f0;border-radius:16px;padding:18px;max-width:390px;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.04),0 8px 24px -12px rgb(15 23 42/.18)}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;word-break:break-all}
+.pill{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:99px;background:#f1f5f9;color:#334155;white-space:nowrap}
+.pill.open{background:#dcfce7;color:#166534}.pill.checkin{background:#fef3c7;color:#92400e}.pill.settled{background:#e0e7ff;color:#3730a3}
+dl{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 10px}dl>div{background:#f8fafc;border-radius:10px;padding:8px 10px}
+dt{font-size:11.5px;color:#64748b}dd{margin:2px 0 0;font-weight:650;font-size:15px}
+.bar{height:6px;border-radius:99px;background:#f1f5f9;overflow:hidden;margin-bottom:10px}.bar i{display:block;height:100%;background:linear-gradient(90deg,#22c55e,#16a34a)}
+.fine{font-size:12px;color:#475569;margin:8px 0}
+.who{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;background:#f8fafc;border-radius:10px;padding:7px 10px;margin:8px 0}
+.who b{word-break:break-all}.who{gap:10px}.who a{color:#475569;cursor:pointer;text-decoration:underline;white-space:nowrap}
+button{width:100%;padding:11px;border:0;border-radius:10px;background:#0f172a;color:#fff;font-weight:600;font-size:14px;cursor:pointer;transition:background .15s,transform .05s}
+button:hover:not([disabled]){background:#1e293b}button:active:not([disabled]){transform:translateY(1px)}
+button.cancel{background:#fff;color:#b91c1c;border:1px solid #fecaca}button.cancel:hover:not([disabled]){background:#fef2f2}
+button[disabled]{background:#cbd5e1;color:#475569;cursor:default}
+.note{font-size:12.5px;color:#166534;margin:8px 0 0}.note.err{color:#b91c1c}
+.qr{text-align:center;margin-top:12px;padding:12px;border:1px dashed #cbd5e1;border-radius:12px}.qr img{width:180px;height:180px;image-rendering:pixelated}.qr small{display:block;color:#64748b;font-size:11.5px;word-break:break-all}
+details.cli{margin-top:10px;font-size:12px;color:#475569}summary{cursor:pointer}
+.cmd{white-space:pre-wrap;word-break:break-all;font-size:11px;background:#f8fafc;padding:8px;border-radius:8px}
+.pay{margin-top:12px;font-size:13px;border-top:1px solid #f1f5f9;padding-top:10px}select{margin-left:4px;font:inherit;padding:2px 4px;border-radius:6px;border:1px solid #cbd5e1}
+.quote{margin-top:6px;color:#334155}.err{color:#b91c1c}`;
 
-/** DOM glue: renders into a shadow root and wires the RSVP button + quote selector. */
+/** DOM glue: renders into a shadow root and wires wallet sign-in, RSVP/cancel, the guest QR and the quote selector. */
 export async function mountWidget(host, eventId, { rpc, fetchImpl = fetch } = {}) {
   const root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
   root.innerHTML = `<style>${CSS}</style><div class="card">Loading ${escapeHtml(eventId)}…</div>`;
@@ -136,8 +205,47 @@ export async function mountWidget(host, eventId, { rpc, fetchImpl = fetch } = {}
   catch (err) { root.innerHTML = `<style>${CSS}</style><div class="card err">ShowUp: ${escapeHtml(err.message)}</div>`; return; }
   const s = eventSummary(info, BigInt(Date.now()) * 1_000_000n);
   root.innerHTML = `<style>${CSS}</style>${renderCard(eventId, s)}`;
-  const cmd = root.querySelector('.cmd');
-  root.querySelector('.rsvp').addEventListener('click', () => { cmd.textContent = `RSVP from a terminal (wallet selector coming next):\n${rsvpCommand(eventId, s.deposit)}`; cmd.hidden = false; });
+  const $ = (q) => root.querySelector(q);
+  const btn = $('.rsvp'), note = $('.note'), who = $('.who'), qr = $('.qr');
+  if ($('.cmd')) $('.cmd').textContent = rsvpCommand(eventId, s.deposit);
+  let wallet = null, action = guestAction(s, null, null);
+
+  const say = (msg, err) => { note.hidden = !msg; note.textContent = msg || ''; note.className = err ? 'note err' : 'note'; };
+  async function render(accountId) {
+    let status = null;
+    if (accountId) { try { status = await viewCall(eventId, 'get_status', { account_id: accountId }, { rpc, fetchImpl }); } catch (e) { say(e.message, true); } }
+    action = guestAction(s, status, accountId);
+    btn.textContent = action.label; btn.disabled = !!action.disabled; btn.className = `rsvp ${action.kind === 'cancel' ? 'cancel' : ''}`;
+    who.hidden = !accountId;
+    if (accountId) who.innerHTML = `<span>Signed in as <b>${escapeHtml(accountId)}</b></span><a class="out">Sign out</a>`;
+    if (accountId) who.querySelector('.out').onclick = async () => { await wallet?.signOut(); render(null); };
+    say(action.note);
+    qr.hidden = !(status === 'Rsvp' && accountId && s.phase !== 'ended' && s.phase !== 'settled');
+    if (!qr.hidden) {
+      const text = checkinPayload(eventId, accountId);
+      qr.innerHTML = `<img alt="Check-in QR for ${escapeHtml(accountId)}" src="${await qrDataUrl(text)}"><small>Check-in code · ${escapeHtml(accountId)}</small>`;
+    }
+  }
+  async function ensureWallet() {
+    wallet ??= await loadWallet({ network: 'testnet', contractId: eventId });
+    wallet.onChange((a) => render(a));
+    return wallet;
+  }
+  btn.addEventListener('click', async () => {
+    try {
+      btn.disabled = true;
+      const w = await ensureWallet();
+      if (action.kind === 'signin') { w.signIn(); btn.disabled = false; return; }
+      say(action.kind === 'rsvp' ? 'Confirm the RSVP in your wallet…' : 'Confirm the cancellation in your wallet…');
+      const out = await w.call(eventId, action.kind === 'rsvp' ? 'rsvp' : 'cancel', {}, { deposit: action.kind === 'rsvp' ? s.deposit : '0' });
+      const h = out?.transaction?.hash;
+      await render(w.accountId());
+      if (h) note.insertAdjacentHTML('beforeend', ` <a href="${explorerTx(h)}" target="_blank" rel="noreferrer">View tx</a>`);
+    } catch (e) { say(e.message || String(e), true); btn.disabled = false; }
+  });
+  if (walletWasUsed(globalThis.localStorage, globalThis.location?.search)) {
+    ensureWallet().then((w) => render(w.accountId())).catch((e) => say(`wallet: ${e.message}`, true));
+  }
   const sel = root.querySelector('select'), out = root.querySelector('.quote');
   if (!sel) return s;
   const refresh = async () => {
