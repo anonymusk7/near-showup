@@ -24,7 +24,7 @@ ul{padding-left:18px;margin:6px 0}a{color:#334155}
 <div class="card">
   <div class="row"><button id="scan" class="ghost">Scan guest QR</button><small id="camnote"></small></div>
   <video id="cam" playsinline muted></video>
-  <form id="manual" class="row" style="margin-top:10px"><input id="code" placeholder="or paste the code / guest account id"><button class="ghost">Look up</button></form>
+  <form id="manual" class="row" style="margin-top:10px" action="javascript:void(0)" onsubmit="return false"><input id="code" placeholder="or paste the code / guest account id"><button type="button" id="lookup" class="ghost" disabled title="Loading…">Look up</button></form>
 </div>
 <div class="card" id="result" hidden></div>
 <div class="card"><b>Recent check-ins</b><ul id="log"><li><small>None yet in this session.</small></li></ul></div>
@@ -85,6 +85,8 @@ async function lookup(text) {
   };
 }
 $('manual').onsubmit = (ev) => { ev.preventDefault(); lookup($('code').value); };
+$('lookup').onclick = (ev) => { ev.preventDefault(); lookup($('code').value); };
+$('lookup').disabled = false; $('lookup').removeAttribute('title');
 if (q.get('guest')) lookup(q.get('guest'));
 
 $('scan').onclick = async () => {

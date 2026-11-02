@@ -119,3 +119,11 @@ test('wallet bundle is lazy: only loaded after a wallet was used or on wallet re
   assert.equal(c.walletWasUsed(store({}), '?transactionHashes=abc'), true);
   assert.equal(c.walletWasUsed(undefined, ''), false);
 });
+
+test('1Click outage (521 HTML / Failed to fetch) gives a friendly message, not raw HTML', async () => {
+  const o = c.ORIGINS[0];
+  const err = await c.quoteDeposit(o, D, { fetchImpl: async () => ({ ok: false, status: 521, text: async () => '<!DOCTYPE html><html>Web server is down</html>' }) }).catch((e) => e);
+  assert.ok(!err.message.includes('<html')); assert.match(c.friendlyQuoteError(err), /unavailable/);
+  assert.match(c.friendlyQuoteError(new TypeError('Failed to fetch')), /unavailable/);
+  assert.equal(c.friendlyQuoteError(new Error('1Click quote failed: 400 refundTo is not valid')), '1Click quote failed: 400 refundTo is not valid');
+});

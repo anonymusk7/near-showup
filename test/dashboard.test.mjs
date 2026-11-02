@@ -44,3 +44,27 @@ test('static server only serves widget/dashboard/lib', () => {
   assert.ok(resolvePath('/dashboard/').endsWith('/dashboard/index.html'));
   for (const bad of ['/.env', '/.git/config', '/target/x', '/widget/../.env', '/%2e%2e/etc/passwd', '/lib/.hidden']) assert.equal(resolvePath(bad), undefined, bad);
 });
+
+test('checkin.html: Look up cannot submit/reload before the module loads', () => {
+  const h = readFileSync(new URL('../dashboard/checkin.html', import.meta.url), 'utf8');
+  const form = h.match(/<form id="manual"[^>]*>.*?<\/form>/s)[0];
+  assert.match(form, /onsubmit="return false"/); assert.match(form, /<button type="button" id="lookup"[^>]*disabled/);
+  assert.match(h, /\$\('lookup'\)\.disabled = false/);
+});
+
+test('1Click proxy forwards dry quotes and maps outages to a JSON 502', async () => {
+  const { proxyQuote } = await import('../scripts/serve.mjs');
+  const { Readable } = await import('node:stream');
+  const run = async (body, fetchImpl, method = 'POST') => {
+    const req = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), { method, url: '/api/1click/quote' });
+    const res = { writeHead(s, h) { this.status = s; this.h = h; }, end(b) { this.body = b; } };
+    await proxyQuote(req, res, fetchImpl); return res;
+  };
+  const ok = await run({ dry: true }, async () => new Response('{"quote":{}}', { status: 200, headers: { 'content-type': 'application/json' } }));
+  assert.equal(ok.status, 200); assert.equal(ok.h['access-control-allow-origin'], '*'); assert.equal(ok.body, '{"quote":{}}');
+  const down = await run({ dry: true }, async () => new Response('<html>521</html>', { status: 521 }));
+  assert.equal(down.status, 502); assert.match(JSON.parse(down.body).error, /521/);
+  const unreachable = await run({ dry: true }, async () => { throw new Error('fetch failed'); });
+  assert.equal(unreachable.status, 502);
+  assert.equal((await run({ dry: false }, async () => assert.fail('must not forward'))).status, 400);
+});

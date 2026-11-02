@@ -1,6 +1,17 @@
 // ShowUp widget core: pure helpers + fetch-injectable RPC/1Click calls. Runs in browsers and Node (tests).
 export const RPC_TESTNET = 'https://rpc.testnet.near.org';
 export const ONECLICK_BASE = 'https://1click.chaindefuser.com/v0';
+// Browsers can't call 1Click directly (no CORS headers), so in a page we go through the dev server's proxy
+// (scripts/serve.mjs, POST /api/1click/quote) on the same origin that served this module.
+export const ONECLICK_PROXY = (() => { try { const u = new URL('/api/1click', import.meta.url); return /^https?:$/.test(u.protocol) ? u.href : null; } catch { return null; } })();
+export const defaultQuoteBase = () => (globalThis.document && ONECLICK_PROXY) || ONECLICK_BASE;
+/** Short, human error for a failed quote. 5xx / 52x / HTML bodies / network errors mean 1Click is down. */
+export function friendlyQuoteError(err) {
+  const m = String(err?.message || err);
+  if (/Failed to fetch|NetworkError|fetch failed|ECONN|ENOTFOUND|\b5\d\d\b|<html|<!DOCTYPE/i.test(m))
+    return '1Click quotes are unavailable right now (the service looks down). You can still RSVP by paying in NEAR.';
+  return m.length > 200 ? m.slice(0, 200) + '…' : m;
+}
 export const YOCTO = 10n ** 24n;
 // 1Click runs on mainnet only, so the preview prices the deposit as wNEAR on mainnet.
 export const WNEAR = 'nep141:wrap.near';
@@ -81,10 +92,10 @@ export function buildQuoteRequest({ originAsset, depositYocto, refundTo, recipie
 }
 
 /** Dry (no funds, no deposit address) 1Click quote: how much of `origin` buys exactly the deposit in NEAR. */
-export async function quoteDeposit(origin, depositYocto, { base = ONECLICK_BASE, fetchImpl = fetch, now } = {}) {
+export async function quoteDeposit(origin, depositYocto, { base = defaultQuoteBase(), fetchImpl = fetch, now } = {}) {
   const body = buildQuoteRequest({ originAsset: origin.asset, depositYocto, refundTo: origin.refundTo, now });
   const r = await fetchImpl(`${base}/quote`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  if (!r.ok) throw new Error(`1Click quote failed: ${r.status} ${await r.text()}`);
+  if (!r.ok) { const t = await r.text(); throw new Error(`1Click quote failed: ${r.status} ${/<html|<!DOCTYPE/i.test(t) ? '(service unavailable)' : t.slice(0, 300)}`); }
   return r.json();
 }
 
@@ -289,7 +300,7 @@ export async function mountWidget(host, eventId, { rpc, fetchImpl = fetch } = {}
     try {
       const q = summarizeQuote(await quoteDeposit(origin, s.deposit, { fetchImpl }), origin);
       out.innerHTML = `Pay <b>${escapeHtml(q.pay)}</b>${q.usd ? ` (≈ $${q.usd})` : ''} → ${escapeHtml(q.receive)} in ~${q.etaSec ?? '?'}s. <span class="fine">Dry quote, no funds moved. 1Click is mainnet only, so this prices the deposit as mainnet wNEAR.</span>`;
-    } catch (err) { out.innerHTML = `<span class="err">${escapeHtml(err.message)}</span>`; }
+    } catch (err) { out.innerHTML = `<span class="err">${escapeHtml(friendlyQuoteError(err))}</span>`; }
   };
   sel.addEventListener('change', refresh);
   refresh();
