@@ -4,6 +4,7 @@ import { setupMyNearWallet } from '@near-wallet-selector/my-near-wallet';
 import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
 import { setupModal } from '@near-wallet-selector/modal-ui';
 import { actionCreators } from '@near-js/transactions';
+import { Buffer } from 'buffer';
 import modalCss from '@near-wallet-selector/modal-ui/styles.css';
 
 let ready;
@@ -21,6 +22,11 @@ export function initWallet({ network = 'testnet', contractId } = {}) {
       onChange(fn) { return selector.store.observable.subscribe(() => fn(accountId())); },
       signIn() { modal.show(); },
       async signOut() { if (selector.isSignedIn()) await (await selector.wallet()).signOut(); },
+      /** NEP-413 signMessage (no tx, no gas). Redirect wallets return the result in location.hash instead. */
+      async signMessage({ message, recipient, nonce, callbackUrl = location.href.split('#')[0] }) {
+        const wallet = await selector.wallet();
+        return wallet.signMessage({ message, recipient, nonce: Buffer.from(nonce), callbackUrl });
+      },
       /** Sign + send one FunctionCall. Browser wallets redirect away and return to `callbackUrl`. */
       async call(receiverId, methodName, args = {}, { deposit = '0', gas = 30_000_000_000_000n, callbackUrl = location.href } = {}) {
         const wallet = await selector.wallet();

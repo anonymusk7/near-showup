@@ -1,0 +1,21 @@
+{
+  "source": "@near-js/signers 2.5.1 KeyPairSigner.signNep413Message, test seed 0x07*32",
+  "cases": [
+    {
+      "message": "ShowUp check-in pass\nevent: ev.testnet\nguest: alice.testnet\nkey: ed25519:abc\nexpires: 2026-11-03T00:00:00.000Z",
+      "recipient": "ev.testnet",
+      "nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "callbackUrl": null,
+      "publicKey": "ed25519:GmaDrppBC7P5ARKV8g3djiwP89vz1jLK23V2GBjuAEGB",
+      "signature": "+Im4gJPkDZmhtLIz+8hsbIk6lgMicNKcmMB7dOGoPRhuv8EdW1ItNHAOr+rrUOPMpkipmj1UrGa2o3/xv5hJBA=="
+    },
+    {
+      "message": "ShowUp check-in pass\nevent: ev.testnet\nguest: alice.testnet\nkey: ed25519:abc\nexpires: 2026-11-03T00:00:00.000Z",
+      "recipient": "ev.testnet",
+      "nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "callbackUrl": "http://localhost:8787/widget/demo.html?event=x.testnet",
+      "publicKey": "ed25519:GmaDrppBC7P5ARKV8g3djiwP89vz1jLK23V2GBjuAEGB",
+      "signature": "B0KgI9baVGmKwPW0tIDsc76eHvwYQLSyuHFsDajv/ltn7RqA3rC1ivXeGUi7Zlvd6eTFaxwJYP2274uxSYJICA=="
+    }
+  ]
+}

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild entry.mjs --bundle --inject:shim.mjs --format=esm --minify --platform=browser --define:process.env.NODE_ENV='\"production\"' --define:global=globalThis --outfile=../widget/vendor/wallet.js --loader:.css=text && esbuild qr-entry.mjs --bundle --format=esm --minify --outfile=../widget/vendor/qr.js"
+    "build": "esbuild entry.mjs --bundle --inject:shim.mjs --format=esm --minify --platform=browser --define:process.env.NODE_ENV='\"production\"' --define:global=globalThis --outfile=../widget/vendor/wallet.js --loader:.css=text && esbuild qr-entry.mjs --bundle --format=esm --minify --outfile=../widget/vendor/qr.js && esbuild crypto-entry.mjs --bundle --format=esm --minify --platform=neutral --outfile=../widget/vendor/crypto.js"
   },
   "dependencies": {
     "@near-js/transactions": "^2.5.1",
@@ -13,7 +13,9 @@
     "@near-wallet-selector/my-near-wallet": "^10.1.4",
     "buffer": "^6.0.3",
     "qrcode": "^1.5.4",
-    "util": "^0.12.5"
+    "util": "^0.12.5",
+    "@noble/curves": "1.8.1",
+    "@noble/hashes": "1.8.0"
   },
   "devDependencies": {
     "esbuild": "^0.28.2"

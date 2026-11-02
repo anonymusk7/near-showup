@@ -97,3 +97,18 @@ Independent NEAR HACKATHON projects by the same author:
 
 ## License
 MIT (see `LICENSE`).
+
+## Round 3: wallet-signed, screenshot-proof door pass
+- The guest's wallet signs a NEP-413 cert once. It binds the event, the guest, an ephemeral phone key and a 24 h expiry.
+- The QR re-signs every 10 s with that phone key. The door (`dashboard/checkin.html`) checks:
+  - the wallet signature;
+  - that the wallet key is a FullAccess key on-chain (`view_access_key`);
+  - the frame signature;
+  - that the code is ≤ 30 s old;
+  - that it has not been scanned before.
+- **Judge check:** `pnpm test` should give 30 JS tests passing. `node scripts/pass-testnet.mjs showup-guest-1793597596.testnet` needs that testnet key in `~/.near-credentials`; it prints live ✓, replay ✗, stale ✗, relabel ✗.
+- **Limits:**
+  - Someone relaying the live screen in real time is not stopped.
+  - The door verifies the pass; the contract's `check_in` is still host/checker-authorized.
+  - The seen-set is per door device.
+- Demo script: `docs/DEMO-SCRIPT.md`.

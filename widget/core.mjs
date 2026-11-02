@@ -36,7 +36,7 @@ export async function viewCall(accountId, method, args = {}, { rpc, fetchImpl = 
   let lastErr;
   for (const url of rpc ? [rpc] : RPC_FALLBACKS) {
     try {
-      const r = await fetchImpl(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+      const r = await fetchImpl(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout?.(8000) });
       if (!r.ok) throw new Error(`RPC HTTP ${r.status}`);
       const json = await r.json();
       if (json.error?.code === -429) throw new Error(`RPC -429 ${json.error.message || ''}`.trim());
@@ -147,6 +147,13 @@ export function walletWasUsed(storage, search = '') {
   try { if (WALLET_KEYS.some((k) => { const v = storage?.getItem(k); return v && v !== 'null' && v !== '[]'; })) return true; } catch {}
   return /[?&](account_id|transactionHashes|errorCode)=/.test(search);
 }
+export const loadPass = () => import(new URL('pass.mjs', import.meta.url).href);
+const PASS_KEY = (ev, g) => `showup-pass:${ev}:${g}`;
+/** MyNearWallet returns signMessage results in the URL hash: #accountId=…&publicKey=…&signature=… */
+export function signedFromHash(hash) {
+  const h = new URLSearchParams(String(hash || '').replace(/^#/, ''));
+  return h.get('signature') && h.get('publicKey') && h.get('accountId') ? { accountId: h.get('accountId'), publicKey: h.get('publicKey'), signature: h.get('signature') } : null;
+}
 export const loadWallet = (opts) => import(new URL('vendor/wallet.js', import.meta.url).href).then((m) => m.initWallet(opts));
 export const qrDataUrl = (text) => import(new URL('vendor/qr.js', import.meta.url).href).then((m) => m.toDataURL(text));
 export const explorerTx = (h) => `https://testnet.nearblocks.io/txns/${h}`;
@@ -221,10 +228,38 @@ export async function mountWidget(host, eventId, { rpc, fetchImpl = fetch } = {}
     if (accountId) who.querySelector('.out').onclick = async () => { await wallet?.signOut(); render(null); };
     say(action.note);
     qr.hidden = !(status === 'Rsvp' && accountId && s.phase !== 'ended' && s.phase !== 'settled');
-    if (!qr.hidden) {
-      const text = checkinPayload(eventId, accountId);
-      qr.innerHTML = `<img alt="Check-in QR for ${escapeHtml(accountId)}" src="${await qrDataUrl(text)}"><small>Check-in code · ${escapeHtml(accountId)}</small>`;
+    clearInterval(rotor);
+    if (!qr.hidden) await showPass(accountId);
+  }
+  let rotor = null;
+  async function showPass(guest) {
+    const P = await loadPass(), store = globalThis.localStorage;
+    let cert = null;
+    try { cert = JSON.parse(store?.getItem(PASS_KEY(eventId, guest)) || 'null'); } catch {}
+    const pending = (() => { try { return JSON.parse(store?.getItem(PASS_KEY(eventId, guest) + ':pending') || 'null'); } catch { return null; } })();
+    const fromHash = signedFromHash(globalThis.location?.hash);
+    if (!cert && pending && fromHash) {
+      cert = P.makeCert(pending, { event: eventId, guest }, fromHash, pending.callbackUrl);
+      store.setItem(PASS_KEY(eventId, guest), JSON.stringify(cert)); store.removeItem(PASS_KEY(eventId, guest) + ':pending');
+      history.replaceState(null, '', location.href.split('#')[0]);
     }
+    if (!cert || cert.guest !== guest || Date.now() > cert.expMs) {
+      qr.innerHTML = `<button class="rsvp mkpass">Create my signed door pass</button><small>Your wallet signs a message (no transaction, no gas). The QR then changes every ${P.ROTATE_MS / 1000} s, so a screenshot stops working.</small>`;
+      qr.querySelector('.mkpass').onclick = async () => {
+        try {
+          const req = P.newPassRequest({ event: eventId, guest }), callbackUrl = location.href.split('#')[0];
+          store.setItem(PASS_KEY(eventId, guest) + ':pending', JSON.stringify({ ephPk: req.ephPk, ephSk: req.ephSk, expMs: req.expMs, nonce: req.nonce, callbackUrl }));
+          const signed = await (await ensureWallet()).signMessage({ ...req.request, callbackUrl });
+          if (signed) { store.setItem(PASS_KEY(eventId, guest), JSON.stringify(P.makeCert(req, { event: eventId, guest }, signed, callbackUrl))); store.removeItem(PASS_KEY(eventId, guest) + ':pending'); showPass(guest); }
+        } catch (e) { say(`pass: ${e.message || e}`, true); }
+      };
+      return;
+    }
+    const draw = async () => {
+      if (!qr.isConnected && rotor) return clearInterval(rotor);
+      qr.innerHTML = `<img alt="Signed check-in pass for ${escapeHtml(guest)}" src="${await qrDataUrl(P.passFrame(cert))}"><small>Signed door pass · ${escapeHtml(guest)} · refreshes every ${P.ROTATE_MS / 1000} s · screenshots expire in ${P.MAX_AGE_MS / 1000} s</small>`;
+    };
+    await draw(); rotor = setInterval(draw, P.ROTATE_MS);
   }
   async function ensureWallet() {
     wallet ??= await loadWallet({ network: 'testnet', contractId: eventId });
