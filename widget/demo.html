@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>ShowUp widget demo</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font:15px system-ui,sans-serif;max-width:860px;margin:32px auto;padding:0 16px;color:#222}
+.row{display:flex;gap:24px;flex-wrap:wrap}code{background:#f3f3f3;padding:2px 4px;border-radius:4px}</style></head>
+<body>
+<h1>ShowUp widget demo</h1>
+<p>Any event page can embed a ShowUp event with one tag:
+<code>&lt;script src="/widget/widget.js" data-event="EVENT.testnet"&gt;&lt;/script&gt;</code>.
+Event data comes from live testnet RPC view calls. The quote is a live 1Click dry quote.</p>
+<div class="row">
+  <div><h3>Live event (created by the factory)</h3>
+    <script src="/widget/widget.js" data-event="ethdenver-side.showup-factory-1793597558.testnet"></script></div>
+  <div><h3>Past event (already settled)</h3>
+    <script src="/widget/widget.js" data-event="showup-demo-1793595312.testnet"></script></div>
+</div>
+<p><a href="/dashboard/?event=ethdenver-side.showup-factory-1793597558.testnet">Host dashboard →</a></p>
+</body></html>
