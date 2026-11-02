@@ -1,0 +1,21 @@
+# ShowUp factory testnet deploy (2026-11-02), near-cli-rs 0.30, faucet-sponsored accounts
+factory account : showup-factory-1793597558.testnet   (create tx C9A67RXmLDVqHEZnxS4DhLJcGkLboEUV2XzzEx2LKdzx)
+host account    : showup-host-1793597558.testnet   (create tx 9xS1X3Z9L7kG291J1sXUQhS72e3CsoS2f8a9oqnQQnzs)
+deploy+init new : 5qoCgbpEhHp6C2wctGaMAReCrg3BaCpQdzFAk7moNk31  (showup_factory.wasm 366848 B, embeds showup_escrow.wasm 179880 B)
+get_min_deposit : "2298800000000000000000000" (2.2988 NEAR)
+create_event    : 9Vo8bJeSVfLF6dL1Z1D31iZNGGjvBxNJxdYBVQ7b7TKy  signer showup-host-1793597558.testnet, attached 2.5 NEAR, return value true
+  args: {"name":"ethdenver-side","deposit":"100000000000000000000000","capacity":25,
+         "windows":{"cancel_deadline_ns":"1794202382694486441","checkin_start_ns":"1794202382694486441","checkin_end_ns":"1794223982694486441"}}
+  -> created ethdenver-side.showup-factory-1793597558.testnet (host = showup-host-1793597558.testnet)
+guest account   : showup-guest-1793597596.testnet   (create tx 988UoUeiUY1j4zs67JhVkbZJ4igTHmuLYQYZDBmFaaP4)
+guest rsvp      : msQjRUjXjGeWPcfmwhe56KaoJhWWCh3wMsyqfDbiseC  (0.1 NEAR)
+
+get_events ->
+[
+  {
+    "account_id": "ethdenver-side.showup-factory-1793597558.testnet",
+    "created_at_ns": "1793597585316060084",
+    "host": "showup-host-1793597558.testnet",
+    "name": "ethdenver-side"
+  }
+]

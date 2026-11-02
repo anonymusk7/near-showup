@@ -1505,6 +1505,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "showup-factory"
+version = "0.1.0"
+dependencies = [
+ "near-sdk",
+]
+
+[[package]]
 name = "signature"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

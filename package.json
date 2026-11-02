@@ -1,9 +1,11 @@
 { "name": "near-showup", "private": true, "type": "module",
   "scripts": {
     "test": "pnpm test:contract && pnpm test:js",
-    "test:contract": "cargo test",
+    "test:contract": "pnpm build:escrow && cargo test",
     "test:js": "node --test test/*.test.mjs",
-    "build:contract": "cargo build -p showup-escrow --target wasm32-unknown-unknown --release",
+    "build:escrow": "cargo build -p showup-escrow --target wasm32-unknown-unknown --release",
+    "build:contract": "pnpm build:escrow && cargo build -p showup-factory --target wasm32-unknown-unknown --release",
     "demo:sim": "node scripts/demo-sim.mjs",
-    "quote:dry": "node scripts/quote-dry.mjs"
+    "quote:dry": "node scripts/quote-dry.mjs",
+    "serve": "node scripts/serve.mjs"
   } }
