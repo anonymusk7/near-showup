@@ -1,0 +1,23 @@
+│    Transaction ID: 7ij9J5qUDfXd4iprguGNPmyMbe6KrWvuKwytjVsnR5gr
+The "rsvp" call to <showup-demo-1793595312.testnet> on behalf of <guest1-1793595336.testnet> succeeded.
+│    Transaction ID: BoosPz7CHKaQppN1RgfBH5i82KrSfEtR3RGabsn7SaHe
+The "rsvp" call to <showup-demo-1793595312.testnet> on behalf of <guest2-1793595336.testnet> succeeded.
+│    Transaction ID: JADwcmhU1tFRz3veGoHYLnCz6R6NpC4yGKSv8DGuwNYV
+The "check_in" call to <showup-demo-1793595312.testnet> on behalf of <showup-demo-1793595312.testnet> succeeded.
+│    Transaction ID: 5d5HTC8v9vAzPSuhed5MJZsGUypyr5GL6Rr4GkWmyBkT
+The "settle" call to <showup-demo-1793595312.testnet> on behalf of <guest2-1793595336.testnet> succeeded.
+[
+  [
+    "guest1-1793595336.testnet",
+    "CheckedIn"
+  ],
+  [
+    "guest2-1793595336.testnet",
+    "Rsvp"
+  ]
+]
+
+
+Here is your console command if you need to script it or re-run:
+    [33m/home/box/.local/lib/node_modules/near-cli-rs/node_modules/.bin_real/near contract call-function as-read-only showup-demo-1793595312.testnet get_guests json-args {} network-config testnet now[39m
+
