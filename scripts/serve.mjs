@@ -26,5 +26,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       res.writeHead(200, { 'content-type': TYPES[extname(abs)] || 'application/octet-stream', 'access-control-allow-origin': '*' });
       res.end(body);
     } catch { res.writeHead(404); res.end('not found'); }
+  }).on('error', (e) => {
+    if (e.code !== 'EADDRINUSE') throw e;
+    console.error(`Port ${PORT} is already in use. Pick another one: pnpm serve 8081 (or PORT=8081 pnpm serve)`);
+    process.exit(1);
   }).listen(PORT, () => console.log(`ShowUp static server: http://localhost:${PORT}/widget/demo.html  http://localhost:${PORT}/dashboard/`));
 }

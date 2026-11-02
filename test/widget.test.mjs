@@ -26,6 +26,19 @@ test('viewCall posts to RPC and decodes', async () => {
   assert.equal(seen.url, 'https://rpc.testnet.near.org'); assert.equal(seen.body.params.method_name, 'get_info'); assert.equal(i.capacity, 10);
   await assert.rejects(c.viewCall('x', 'y', {}, { fetchImpl: async () => ({ ok: false, status: 503 }) }), /503/);
 });
+test('viewCall falls back to FastNEAR on -429, network error or HTTP error; explicit rpc is used alone', async () => {
+  const ok = { ok: true, json: async () => fx('demo-get_info.rpc.json') };
+  for (const fail of [{ ok: true, json: async () => ({ error: { code: -429, message: 'deprecated' } }) }, { ok: false, status: 429 }, null]) {
+    const urls = []; const f = async (url) => { urls.push(url); if (urls.length > 1) return ok; if (!fail) throw new TypeError('fetch failed'); return fail; };
+    assert.equal((await c.viewCall('a', 'get_info', {}, { fetchImpl: f })).capacity, 10);
+    assert.deepEqual(urls, c.RPC_FALLBACKS);
+  }
+  const urls = []; await assert.rejects(c.viewCall('a', 'b', {}, { rpc: 'https://my.rpc', fetchImpl: async (u) => { urls.push(u); return { ok: false, status: 429 }; } }), /429/);
+  assert.deepEqual(urls, ['https://my.rpc']);
+  // a contract-level error is an answer, not an outage: no retry on the next RPC
+  const seen = []; await assert.rejects(c.viewCall('a', 'b', {}, { fetchImpl: async (u) => { seen.push(u); return { ok: true, json: async () => ({ error: { cause: { name: 'UNKNOWN_ACCOUNT' } } }) }; } }), /UNKNOWN_ACCOUNT/);
+  assert.equal(seen.length, 1);
+});
 test('formatNear truncates with BigInt precision', () => {
   assert.equal(c.formatNear(D), '0.1'); assert.equal(c.formatNear(10n ** 24n * 5n), '5');
   assert.equal(c.formatNear('1333333333333333333333333'), '1.3333'); assert.equal(c.formatNear('1', 24), '0.000000000000000000000001');

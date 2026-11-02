@@ -1,5 +1,18 @@
 # ShowUp: event deposits where no-shows pay the people who show up
 
+```yaml
+project: ShowUp
+tracks: [realworld, open]
+one_liner: RSVP deposits for events, escrowed by a NEAR contract; no-shows' deposits are split among attendees.
+near: [rust near-sdk 5.5 escrow + factory contracts (sub-accounts, batched receipts, callbacks), testnet JSON-RPC from the browser, NEAR Intents 1Click dry quotes]
+network: testnet (1Click quotes: mainnet, dry:true only)
+try_it: pnpm test && pnpm serve   # then http://localhost:8080/widget/demo.html
+needs_key: false
+status: work in progress (NEAR HACKATHON, Nov 2026)
+```
+
+Tracks: `realworld` (merchant/event payments with any-chain deposits via NEAR Intents), `open`.
+
 **What:** NEAR contracts plus an embeddable widget and a host dashboard for event RSVPs. Guests lock a deposit to RSVP and get a full refund if they cancel before the deadline. After the event, every attendee gets their deposit back plus an equal share of the no-show deposits.
 **Problem:** free crypto side events see about 50% no-shows, and deposits fail because guests don't hold the right token on the right chain. ShowUp previews paying from any chain through NEAR Intents 1Click.
 
@@ -8,7 +21,7 @@ Status: work in progress (NEAR HACKATHON, Nov 2026).
 ## NEAR tech used
 - **Rust `near-sdk` 5.5 escrow contract** (`contracts/escrow`): `rsvp` (payable), `cancel`, `add_checker`, `check_in`, `settle`, plus the views `get_info`, `get_guests` and `get_status`.
 - **Factory contract** (`contracts/factory`): `create_event(name, deposit, capacity, windows)` (payable). In one batched receipt it creates the `<name>.<factory>` sub-account, funds it, deploys the escrow wasm embedded with `include_bytes!`, and calls `new` with `host = predecessor`. The `on_event_created` callback records the event, or refunds the host if the batch failed. Views: `get_events`, `get_event` and `get_min_deposit`.
-- **Testnet JSON-RPC `query/call_function` view calls**, made straight from the browser by the widget and dashboard (`https://rpc.testnet.near.org`).
+- **Testnet JSON-RPC `query/call_function` view calls**, made straight from the browser by the widget and dashboard (`https://rpc.testnet.near.org`, falling back to `https://rpc.testnet.fastnear.com`).
 - **NEAR Intents 1Click** (`lib/oneclick.mjs` in Node, `widget/core.mjs` in the browser). It runs live `dry:true` `EXACT_OUTPUT` quotes for "pay the deposit from USDC/ETH/SOL on Base/Arbitrum/Solana".
 - Delegated door staff via `add_checker`.
 - **near-cli-rs 0.30**, using faucet-sponsored accounts for every testnet deploy.
@@ -21,6 +34,7 @@ Status: work in progress (NEAR HACKATHON, Nov 2026).
 | `widget/widget.js` + `widget/core.mjs` | `<script src=".../widget/widget.js" data-event="acct.testnet">`, rendered in a shadow DOM with no build step |
 | `dashboard/index.html` + `dashboard/logic.mjs` | host dashboard: guests, statuses, projected or final payout table, conservation check |
 | `scripts/serve.mjs` | dependency-free static server (no npx); serves only `widget/`, `dashboard/` and `lib/` |
+| `scripts/view.mjs` | `pnpm view`: read-only view call with the widget's RPC fallback |
 | `lib/settle.mjs` | settle math mirrored from the contract; used by the dashboard |
 
 ## Run
@@ -28,21 +42,22 @@ Status: work in progress (NEAR HACKATHON, Nov 2026).
 # needs Rust 1.86 + wasm32-unknown-unknown target, Node 20.11+, pnpm
 pnpm test            # builds escrow wasm, cargo tests (escrow + factory), node tests
 pnpm build:contract  # escrow wasm, then the factory wasm that embeds it
-pnpm serve           # http://localhost:8080/widget/demo.html and /dashboard/
+pnpm serve           # http://localhost:8080/widget/demo.html and /dashboard/ (port busy? pnpm serve 8081)
+pnpm view <account> <method> ['<json args>']   # read-only view call without near-cli
 pnpm demo:sim        # simulated event payout table
 pnpm quote:dry       # live 1Click dry quote (no funds moved)
 ```
 The factory `include_bytes!` the escrow at `target/wasm32-unknown-unknown/release/showup_escrow.wasm`, so the escrow must be built first. `pnpm test` and `pnpm build:contract` handle that.
 
 ## Judge steps (do X, see Y)
-1. Run `pnpm test`. You should see `test result: ok. 11 passed` (escrow) and `test result: ok. 10 passed` (factory), plus two empty doc-test results, then `pass 19` / `fail 0` for the JS tests (settle, 1Click, widget, dashboard, static server). These run offline from recorded RPC/1Click fixtures in `test/fixtures/`.
-2. Run `pnpm serve` and open http://localhost:8080/widget/demo.html. You should see two widget cards read live from testnet:
+1. Run `pnpm test`. You should see `test result: ok. 11 passed` (escrow) and `test result: ok. 10 passed` (factory), plus two empty doc-test results, then `pass 20` / `fail 0` for the JS tests (settle, 1Click, widget, RPC fallback, dashboard, static server). These run offline from recorded RPC/1Click fixtures in `test/fixtures/`.
+2. Run `pnpm serve` and open http://localhost:8080/widget/demo.html. If port 8080 is taken, run `pnpm serve 8081` and use that port in steps 2 and 3. The widget and dashboard read testnet through `rpc.testnet.near.org` and fall back to `rpc.testnet.fastnear.com` automatically if it answers -429 or fails (`data-rpc=` / `?rpc=` pin one RPC). You should see two widget cards read live from testnet:
    - **ethdenver-side.showup-factory-1793597558.testnet**: "RSVP open", deposit 0.1 NEAR, capacity 25, spots left 24, and a live 1Click line such as "Pay 0.43 USDC (≈ $0.43) → 0.1 NEAR in ~37s". Changing the select (USDC Arbitrum/Solana, ETH Base, SOL) re-quotes. Clicking RSVP shows the exact `near` CLI command.
    - **showup-demo-1793595312.testnet**: "Settled", with the button disabled.
 3. Open http://localhost:8080/dashboard/?event=showup-demo-1793595312.testnet. You should see "Final payouts (settled)": guest1 (CheckedIn) gets 0.2 NEAR, guest2 (Rsvp) is a no-show with the deposit forfeited, and "Conservation: … → true". The "Factory events…" dropdown is filled live from the factory's `get_events`.
-4. Read the factory on-chain:
+4. Read the factory on-chain (no near-cli? `pnpm view showup-factory-1793597558.testnet get_events` prints the same JSON):
    `near contract call-function as-read-only showup-factory-1793597558.testnet get_events json-args '{}' network-config testnet now`. You should see one record, `ethdenver-side.showup-factory-1793597558.testnet`, with host `showup-host-1793597558.testnet`.
-5. Read the factory-created event:
+5. Read the factory-created event (or `pnpm view ethdenver-side.showup-factory-1793597558.testnet get_info`):
    `near contract call-function as-read-only ethdenver-side.showup-factory-1793597558.testnet get_info json-args '{}' network-config testnet now`. You should see `host: showup-host-1793597558.testnet`, `capacity: 25` and `active: 1`.
 6. Optional: run `pnpm demo:sim` (5 RSVPs, 1 cancel, 3 check-ins; each attendee gets 6.666666 NEAR) and `pnpm quote:dry`.
 

@@ -7,5 +7,6 @@
     "build:contract": "pnpm build:escrow && cargo build -p showup-factory --target wasm32-unknown-unknown --release",
     "demo:sim": "node scripts/demo-sim.mjs",
     "quote:dry": "node scripts/quote-dry.mjs",
-    "serve": "node scripts/serve.mjs"
+    "serve": "node scripts/serve.mjs",
+    "view": "node scripts/view.mjs"
   } }

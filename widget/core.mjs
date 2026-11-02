@@ -27,10 +27,26 @@ export function parseViewResponse(json) {
   return JSON.parse(new TextDecoder().decode(Uint8Array.from(json.result.result)));
 }
 
-export async function viewCall(accountId, method, args = {}, { rpc = RPC_TESTNET, fetchImpl = fetch } = {}) {
-  const r = await fetchImpl(rpc, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(buildViewRequest(accountId, method, args)) });
-  if (!r.ok) throw new Error(`RPC HTTP ${r.status}`);
-  return parseViewResponse(await r.json());
+// rpc.testnet.near.org sometimes answers -429 (rate limit / deprecation notice); fall back to FastNEAR's public testnet RPC.
+export const RPC_FALLBACKS = [RPC_TESTNET, 'https://rpc.testnet.fastnear.com'];
+
+/** View call. An explicit `rpc` is used alone; otherwise each RPC_FALLBACKS entry is tried on network error, HTTP error or -429. */
+export async function viewCall(accountId, method, args = {}, { rpc, fetchImpl = fetch } = {}) {
+  const body = JSON.stringify(buildViewRequest(accountId, method, args));
+  let lastErr;
+  for (const url of rpc ? [rpc] : RPC_FALLBACKS) {
+    try {
+      const r = await fetchImpl(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+      if (!r.ok) throw new Error(`RPC HTTP ${r.status}`);
+      const json = await r.json();
+      if (json.error?.code === -429) throw new Error(`RPC -429 ${json.error.message || ''}`.trim());
+      return parseViewResponse(json);
+    } catch (e) {
+      if (/^(RPC error|view failed|malformed)/.test(e.message)) throw e; // contract-level answer: don't retry elsewhere
+      lastErr = e;
+    }
+  }
+  throw lastErr;
 }
 
 /** yocto string/bigint -> "1.2345" (truncated, trailing zeros trimmed). */
@@ -112,7 +128,7 @@ button[disabled]{background:#999;cursor:default}.cmd{white-space:pre-wrap;word-b
 .pay{margin-top:12px;font-size:13px}.quote{margin-top:6px;color:#333}.err{color:#b00}`;
 
 /** DOM glue: renders into a shadow root and wires the RSVP button + quote selector. */
-export async function mountWidget(host, eventId, { rpc = RPC_TESTNET, fetchImpl = fetch } = {}) {
+export async function mountWidget(host, eventId, { rpc, fetchImpl = fetch } = {}) {
   const root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
   root.innerHTML = `<style>${CSS}</style><div class="card">Loading ${escapeHtml(eventId)}…</div>`;
   let info;
