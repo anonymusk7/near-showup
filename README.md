@@ -26,6 +26,7 @@ Status: work in progress (NEAR HACKATHON, Nov 2026).
 - **NEAR Wallet Selector** (`@near-wallet-selector/core` 10 with MyNearWallet + Meteor and the modal UI) for RSVP, cancel and check-in signing. It is pre-bundled into `widget/vendor/wallet.js` from `wallet-src/` (`pnpm --dir wallet-src install && pnpm --dir wallet-src build`), so the widget stays a one-tag embed with no build step. The 1.8 MB bundle is only fetched when someone clicks a wallet button, or is returning from a wallet.
 - **QR check-in**: the guest's widget draws `showup:checkin?event=…&guest=…` locally (`widget/vendor/qr.js`; no QR web service), and `dashboard/checkin.html` scans it and signs `check_in`.
 - Delegated door staff via `add_checker`.
+- **NEP-366 meta transactions (gasless cancel / check-in)**: `relayer/` accepts a borsh `SignedDelegateAction`, checks it against a strict policy, wraps it in `Action::Delegate` and pays the gas from a testnet relayer account. The borsh codec and signing live in `lib/nep366.mjs` (no near-api-js; byte-for-byte equal to `@near-js/transactions` 2.5.1 on a recorded vector).
 - **near-cli-rs 0.30**, using faucet-sponsored accounts for every testnet deploy.
 
 ## Layout
@@ -38,6 +39,8 @@ Status: work in progress (NEAR HACKATHON, Nov 2026).
 | `scripts/serve.mjs` | dependency-free static server (no npx); serves only `widget/`, `dashboard/` and `lib/` |
 | `scripts/view.mjs` | `pnpm view`: read-only view call with the widget's RPC fallback |
 | `lib/settle.mjs` | settle math mirrored from the contract; used by the dashboard |
+| `lib/nep366.mjs` | borsh Action / DelegateAction / SignedDelegateAction / Transaction codec, ed25519 signing, client helper (`signedDelegateCall`, `relaySignedDelegate`) |
+| `relayer/policy.mjs` + `relayer/server.mjs` | gasless relayer: pure policy (unit-tested) and the HTTP server (`pnpm relayer`); `relayer/demo-testnet.mjs` is the live run (`pnpm relayer:demo`) |
 
 ## Run
 ```
@@ -48,11 +51,13 @@ pnpm serve           # http://localhost:8080/widget/demo.html and /dashboard/ (p
 pnpm view <account> <method> ['<json args>']   # read-only view call without near-cli
 pnpm demo:sim        # simulated event payout table
 pnpm quote:dry       # live 1Click dry quote (no funds moved)
+RELAYER_ACCOUNT=<you>.testnet pnpm relayer   # gasless relayer on :3030 (key from ~/.near-credentials/testnet)
+pnpm relayer:demo    # live TESTNET run: faucet accounts, event, RSVPs, gasless cancel + check_in (moves testnet NEAR only)
 ```
 The factory `include_bytes!` the escrow at `target/wasm32-unknown-unknown/release/showup_escrow.wasm`, so the escrow must be built first. `pnpm test` and `pnpm build:contract` handle that.
 
 ## Judge steps (do X, see Y)
-1. Run `pnpm test`. You should see `test result: ok. 11 passed` (escrow) and `test result: ok. 10 passed` (factory), plus two empty doc-test results, then `pass 33` / `fail 0` for the JS tests (settle, 1Click, widget, wallet/RSVP states, QR check-in, RPC fallback, dashboard, static server). These run offline from recorded RPC/1Click fixtures in `test/fixtures/`.
+1. Run `pnpm test`. You should see `test result: ok. 11 passed` (escrow) and `test result: ok. 10 passed` (factory), plus two empty doc-test results, then `pass 50` / `fail 0` for the JS tests (settle, 1Click, widget, wallet/RSVP states, QR check-in, RPC fallback, dashboard, CSV export, static server, NEP-366 codec and relayer policy). These run offline from recorded RPC/1Click fixtures in `test/fixtures/`.
 2. Run `pnpm serve` and open http://localhost:8080/widget/demo.html. If port 8080 is taken, run `pnpm serve 8081` and use that port in steps 2 and 3. The widget and dashboard read testnet through `rpc.testnet.near.org` and fall back to `rpc.testnet.fastnear.com` automatically if it answers -429 or fails (`data-rpc=` / `?rpc=` pin one RPC). You should see two widget cards read live from testnet:
    - **ethdenver-side.showup-factory-1793597558.testnet**: "RSVP open", deposit 0.1 NEAR, capacity 25, spots left 24, and a live 1Click line such as "Pay 0.43 USDC (≈ $0.43) → 0.1 NEAR in ~37s". Changing the select (USDC Arbitrum/Solana, ETH Base, SOL) re-quotes. Clicking **Sign in with NEAR wallet to RSVP** opens the NEAR wallet selector (MyNearWallet or Meteor, testnet). After you sign in, the button becomes **RSVP: lock 0.1 NEAR**, which asks your wallet to sign exactly `rsvp` with the deposit attached. Once you have RSVPed you get **Cancel RSVP (refund 0.1 NEAR)** and your **check-in QR code**. "Prefer a terminal?" still shows the exact `near` CLI command.
    - **showup-demo-1793595312.testnet**: "Settled", with the button disabled.
@@ -89,10 +94,70 @@ Explorer: https://testnet.nearblocks.io/address/showup-factory-1793597558.testne
 - The check-in QR identifies a guest but doesn't prove they hold the account, so door staff still match the person (a screenshot of someone else's code would pass). The next step is a NEP-413 signed-message QR. Wallet signing was exercised up to the wallet's sign-in screen in a headless browser; the on-chain `rsvp`/`check_in` calls in the table were signed with near-cli using the same arguments the page sends.
 - `get_guests` is unpaginated; that's fine for demo-sized events.
 
+## Gasless cancel and check-in (NEP-366 relayer)
+Guests and door staff can cancel or check in without holding NEAR for gas. The signer builds a `DelegateAction`, signs `sha256(u32(2^30+366) ‖ borsh(DelegateAction))`, and POSTs it to the relayer as base64 (`POST /relay {"signed_delegate": "…"}`). The relayer sends one transaction `relayer → sender: [Delegate(signed)]`, signed with its own testnet key.
+
+**Policy** (`relayer/policy.mjs`, pure and unit-tested). Everything else is rejected with HTTP 403 and nothing is sent.
+- The receiver must be the factory or exactly `<label>.<factory>`, where `<label>` follows the factory's `valid_name` rule. Look-alikes, nested sub-accounts and other accounts are rejected. With `VERIFY_FACTORY` (on by default) the escrow must also be a record in the factory's `get_event(name)`.
+- There must be exactly one action. It must be a `FunctionCall` to `check_in` or `cancel` on an escrow; nothing is allow-listed on the factory itself. Transfers, AddKey, DeleteKey, DeleteAccount, Stake, CreateAccount, DeployContract and nested Delegate are rejected.
+- The deposit must be 0, gas must be ≤ 50 Tgas, and the args are checked: `cancel` takes `{}`, `check_in` takes `{"guest": <account>}`.
+- `max_block_height` must be in the future and at most 1200 blocks ahead. The nonce must be > 0, and the ed25519 signature must verify.
+- Anti-griefing pre-flight: the relayer reads `get_info`/`get_status` and refuses calls the escrow would panic on (not host/checker, window closed, no active RSVP), so it doesn't pay for failures.
+- The same signed action posted twice returns the first result (`replayed: true`) and is never sent twice.
+
+**Client side.** `lib/nep366.mjs` `signedDelegateCall()` reads the access-key nonce and the final block height, then signs; `relaySignedDelegate()` posts the result. The widget's **Cancel RSVP** (`data-relayer="http://localhost:3030"`) and the door page's **Check in** (`checkin.html?relayer=…`) first try the gasless path. They sign with the function-call key that MyNearWallet stores in localStorage at sign-in (it is scoped to the event contract). On any error, or if that key isn't available, they fall back to the normal wallet-signed transaction. `rsvp` attaches the deposit, so it always goes through the wallet. The browser path is unit-tested only. Wallet Selector 10's MyNearWallet and Meteor modules don't implement `signDelegateAction`, which is why it uses the local key. The live run below signed with near-cli keychain keys.
+
+**Live testnet run (2026-11-04)**, `pnpm relayer:demo`, full log `docs/testnet-relayer-2026-11-04.log`:
+
+| Step | Account / tx |
+|---|---|
+| Faucet accounts | relayer `showup-relayer-1793775606.testnet`, host `showup-rhost-1793775606.testnet`, guests `showup-rguest-a-1793775606.testnet`, `showup-rguest-b-1793775606.testnet` |
+| `create_event` via the factory (host pays) | [`8CC1uvP9SWV3zcyyeADafrayb6VeGoMbN3MgB84kFJup`](https://testnet.nearblocks.io/txns/8CC1uvP9SWV3zcyyeADafrayb6VeGoMbN3MgB84kFJup) → `gasless-1793775606.showup-factory-1793597558.testnet` (0.01 NEAR deposit) |
+| Guest A `rsvp` (guest pays deposit + gas) | [`6HsmwGRxKqWEfhHDggnqK3vs79VpFuSxAbEjzcHeGVbn`](https://testnet.nearblocks.io/txns/6HsmwGRxKqWEfhHDggnqK3vs79VpFuSxAbEjzcHeGVbn) |
+| Guest B `rsvp` (guest pays deposit + gas) | [`FhBbtJzuKN954EFvr35FkKn93f23mXaybz9VfVdjzQDH`](https://testnet.nearblocks.io/txns/FhBbtJzuKN954EFvr35FkKn93f23mXaybz9VfVdjzQDH) |
+| Rejected over HTTP, nothing sent | transfer 1 NEAR, AddKey full access, cancel on a non-factory receiver, rsvp with deposit, cancel with 1 yocto, settle, check_in signed by a guest |
+| **Gasless `cancel`** signed by guest A, sent by the relayer | [`4HsvijX9g9U6826KYiPdrWrFBUPnFJx9xE8gKMBPjAsV`](https://testnet.nearblocks.io/txns/4HsvijX9g9U6826KYiPdrWrFBUPnFJx9xE8gKMBPjAsV). Guest A balance 9.98981 → 9.99981 NEAR: **+0.01 NEAR exactly** (the refund, nothing taken for gas). The relayer paid 0.0003 NEAR. |
+| **Gasless `check_in`** of guest B signed by the host | [`5tEUx7X71Nn1ZsrNECh5MyWDEosJJPan2K4XU39cPrpw`](https://testnet.nearblocks.io/txns/5tEUx7X71Nn1ZsrNECh5MyWDEosJJPan2K4XU39cPrpw). Host balance change: **0 yocto**. The relayer paid 0.00025 NEAR. Guest B is now `CheckedIn`. Re-posting the same signed action returned the same hash with no second tx. |
+
+Both transactions show `signer_id = showup-relayer-1793775606.testnet` with a single `Delegate` action and no failed receipts (checked with RPC `tx`). An earlier run the same day (`docs/testnet-relayer-2026-11-04-run1.log`, gasless cancel [`8fGcjGBvABQMpnD1TmQCu1GRvFEMajE51JXaRsTM2eCw`](https://testnet.nearblocks.io/txns/8fGcjGBvABQMpnD1TmQCu1GRvFEMajE51JXaRsTM2eCw)) found a bug. The check_in POST arrived twice, the duplicate failed pre-flight, and the script crashed before logging the hash. The duplicate-request handling above fixes this.
+
+## Host CSV export
+On the dashboard, **Export CSV** downloads `showup-<event>-ledger.csv` (RFC 4180, CRLF, UTF-8, a single header row, no comment lines). It has one row per guest, plus a host row if the host receives rounding dust or the unclaimed pool. The columns are:
+
+`event, network, guest_account, status, rsvp_time_utc, deposit_near, deposit_tx, refund_near, refund_time_utc, refund_tx, payout_near, payout_time_utc, payout_tx, explorer_url`
+
+- Amounts are decimal NEAR (e.g. `0.01`), and times are ISO 8601 UTC.
+- `status` is one of `attended`, `no_show_forfeited`, `rsvp_not_checked_in`, `cancelled_refunded`, `host_rounding_dust` or `host_no_attendees_pool`.
+- `payout_*` is only filled once the event is settled.
+- Tx hashes and times come from `https://api-testnet.nearblocks.io/v1/account/<escrow>/txns`. When they aren't available, those cells stay blank.
+- On 2026-11-04 that API returned `{"txns":[]}` for every ShowUp account, so a live export currently has amounts and statuses but blank hash and time columns.
+
+The logic is a pure function (`ledgerRows` / `ledgerCsv` / `csvCell` in `dashboard/logic.mjs`) and is tested against the settled demo event.
+
+## Libraries, templates and AI-generated code (Q-005)
+**Rust contracts** (`Cargo.toml`, `contracts/*/Cargo.toml`): `near-sdk =5.5.0` is the only dependency, plus its `unit-testing` feature for tests.
+
+**Browser bundles** (`widget/vendor/*.js`, built from `wallet-src/` with esbuild 0.28.2; versions from `wallet-src/pnpm-lock.yaml`):
+- `wallet.js`: `@near-wallet-selector/core`, `my-near-wallet`, `meteor-wallet` and `modal-ui` 10.1.4; `@near-js/transactions` 2.5.1 (which pulls in `@near-js/*` 2.x and `near-api-js` 6.5.1 transitively); `buffer` 6.0.3 and `util` 0.12.5 (browser shims). The modal UI bundles React 19.
+- `qr.js`: `qrcode` 1.5.4.
+- `crypto.js`: `@noble/curves` 1.8.1 (ed25519) and `@noble/hashes` 1.8.0 (sha256), plus a small base58 written here.
+
+**Node / JS**: the root `package.json` has no runtime or dev dependencies. Tests use `node:test`, and the static server and relayer use `node:http`. No templates or starter kits were used.
+
+**Tools that are not code dependencies**: near-cli-rs 0.30 (deploys, faucet accounts), pnpm and esbuild. `@near-js/transactions` 2.5.1 was installed outside the repo once, to record `test/fixtures/nep366-nearjs.json`. jsQR was used once to decode the widget's QR during the recorded door test.
+
+**AI-generated code**: most of the code in this repo was written with an AI coding assistant (Claude Code) and reviewed, tested and run on testnet by the author. That covers the contracts, widget, dashboard, relayer, tests, scripts and this README. The design, product decisions and testnet runs were directed by the author. The vendored bundles in `widget/vendor/` are minified third-party code generated by esbuild, not hand-written.
+
+## Secrets scan
+gitleaks v8 (8.21.2, `gitleaks git .`) was run over the full git history and found 0 real secrets. Every finding was a false positive:
+- 4 × `generic-api-key` on minified `KeyPair` identifiers inside `widget/vendor/wallet.js`.
+- An earlier scan also flagged an ed25519 signature in a recorded 1Click quote fixture.
+
+A `gitleaks dir .` scan of the working tree adds only a gitignored `target/` build artifact (an ed25519-dalek library test key). The throwaway test seed in `test/fixtures/nep366-nearjs.json` (bytes 1..32) is not a real key. Real testnet keys live only in `~/.near-credentials/testnet` (outside the repo), and the relayer and demo scripts never print them.
+
 ## Related projects by the same author (Q-015)
 Independent NEAR HACKATHON projects by the same author:
-- https://github.com/anonymusk7/near-sealed
-- https://github.com/anonymusk7/near-petri
+- https://github.com/anonymusk7/near-petri (Petri)
 - https://github.com/anonymusk7/near-showup (this repo)
 
 ## License
@@ -106,7 +171,7 @@ MIT (see `LICENSE`).
   - the frame signature;
   - that the code is ≤ 30 s old;
   - that it has not been scanned before.
-- **Judge check:** `pnpm test` should give 30 JS tests passing. `node scripts/pass-testnet.mjs showup-guest-1793597596.testnet` needs that testnet key in `~/.near-credentials`; it prints live ✓, replay ✗, stale ✗, relabel ✗.
+- **Judge check:** `pnpm test` should give 50 JS tests passing (the pass tests are in `test/pass.test.mjs`). `node scripts/pass-testnet.mjs showup-guest-1793597596.testnet` needs that testnet key in `~/.near-credentials`; it prints live ✓, replay ✗, stale ✗, relabel ✗.
 - **Limits:**
   - Someone relaying the live screen in real time is not stopped.
   - The door verifies the pass; the contract's `check_in` is still host/checker-authorized.

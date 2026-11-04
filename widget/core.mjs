@@ -169,6 +169,23 @@ export const loadWallet = (opts) => import(new URL('vendor/wallet.js', import.me
 export const qrDataUrl = (text) => import(new URL('vendor/qr.js', import.meta.url).href).then((m) => m.toDataURL(text));
 export const explorerTx = (h) => `https://testnet.nearblocks.io/txns/${h}`;
 
+/**
+ * Gasless path (NEP-366): if a relayer is configured and the browser holds the function-call key the wallet added at
+ * sign-in (MyNearWallet keeps it in localStorage), sign a DelegateAction with it and let the relayer pay the gas.
+ * Returns {hash, gasless: true}, or null when this path is unavailable. Throws if the relayer refused; callers then
+ * fall back to a normal wallet-signed transaction.
+ */
+export async function gaslessCall({ relayer, accountId, receiverId, methodName, args = {}, storage = globalThis.localStorage, rpc, fetchImpl = fetch,
+  loadNep366 = () => import(new URL('../lib/nep366.mjs', import.meta.url).href) }) {
+  if (!relayer || !accountId) return null;
+  const N = await loadNep366();
+  const secretKey = N.browserFunctionCallKey(storage, accountId);
+  if (!secretKey) return null;
+  const signed = await N.signedDelegateCall({ senderId: accountId, secretKey, receiverId, methodName, args, fetchImpl, ...(rpc ? { rpc } : {}) });
+  const out = await N.relaySignedDelegate(relayer, signed, { fetchImpl });
+  return { hash: out.hash, gasless: true };
+}
+
 export function renderCard(eventId, s) {
   const e = escapeHtml;
   const opts = ORIGINS.map((o) => `<option value="${o.id}">${e(o.label)}</option>`).join('');
@@ -215,7 +232,7 @@ details.cli{margin-top:10px;font-size:12px;color:#475569}summary{cursor:pointer}
 .quote{margin-top:6px;color:#334155}.err{color:#b91c1c}`;
 
 /** DOM glue: renders into a shadow root and wires wallet sign-in, RSVP/cancel, the guest QR and the quote selector. */
-export async function mountWidget(host, eventId, { rpc, fetchImpl = fetch } = {}) {
+export async function mountWidget(host, eventId, { rpc, relayer, fetchImpl = fetch } = {}) {
   const root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
   root.innerHTML = `<style>${CSS}</style><div class="card">Loading ${escapeHtml(eventId)}…</div>`;
   let info;
@@ -283,10 +300,16 @@ export async function mountWidget(host, eventId, { rpc, fetchImpl = fetch } = {}
       const w = await ensureWallet();
       if (action.kind === 'signin') { w.signIn(); btn.disabled = false; return; }
       say(action.kind === 'rsvp' ? 'Confirm the RSVP in your wallet…' : 'Confirm the cancellation in your wallet…');
-      const out = await w.call(eventId, action.kind === 'rsvp' ? 'rsvp' : 'cancel', {}, { deposit: action.kind === 'rsvp' ? s.deposit : '0' });
-      const h = out?.transaction?.hash;
+      let out = null;
+      if (action.kind === 'cancel' && relayer) {
+        // rsvp attaches the deposit, so only cancel can go through the gasless relayer
+        out = await gaslessCall({ relayer, accountId: w.accountId(), receiverId: eventId, methodName: 'cancel', rpc, fetchImpl })
+          .catch((e) => { console.warn('ShowUp gasless cancel unavailable, using the wallet:', e.message); return null; });
+      }
+      out ??= await w.call(eventId, action.kind === 'rsvp' ? 'rsvp' : 'cancel', {}, { deposit: action.kind === 'rsvp' ? s.deposit : '0' });
+      const h = out?.hash ?? out?.transaction?.hash;
       await render(w.accountId());
-      if (h) note.insertAdjacentHTML('beforeend', ` <a href="${explorerTx(h)}" target="_blank" rel="noreferrer">View tx</a>`);
+      if (h) note.insertAdjacentHTML('beforeend', ` <a href="${explorerTx(h)}" target="_blank" rel="noreferrer">View tx</a>${out?.gasless ? ' (gasless: the relayer paid the gas)' : ''}`);
     } catch (e) { say(e.message || String(e), true); btn.disabled = false; }
   });
   if (walletWasUsed(globalThis.localStorage, globalThis.location?.search)) {

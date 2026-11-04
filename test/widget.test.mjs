@@ -127,3 +127,22 @@ test('1Click outage (521 HTML / Failed to fetch) gives a friendly message, not r
   assert.match(c.friendlyQuoteError(new TypeError('Failed to fetch')), /unavailable/);
   assert.equal(c.friendlyQuoteError(new Error('1Click quote failed: 400 refundTo is not valid')), '1Click quote failed: 400 refundTo is not valid');
 });
+
+test('gaslessCall: null without relayer/key, relays with the browser function-call key, surfaces relayer errors', async () => {
+  const N = await import('../lib/nep366.mjs');
+  const { b58encode } = await import('../widget/vendor/crypto.js');
+  const sk = 'ed25519:' + b58encode(new Uint8Array(32).fill(3));
+  const store = { getItem: (k) => (k === 'near-api-js:keystore:g.testnet:testnet' ? sk : null) };
+  assert.equal(await c.gaslessCall({ relayer: null, accountId: 'g.testnet', storage: store }), null);
+  assert.equal(await c.gaslessCall({ relayer: 'http://r', accountId: 'other.testnet', storage: store, receiverId: 'ev.testnet', methodName: 'cancel' }), null);
+  let posted;
+  const fetchImpl = async (url, o) => {
+    const b = JSON.parse(o.body);
+    if (url === 'http://r/relay') { posted = N.decodeSignedDelegateBase64(b.signed_delegate); return { ok: true, status: 200, json: async () => ({ ok: true, hash: 'HX' }) }; }
+    return { json: async () => ({ result: b.method === 'block' ? { header: { height: 10 } } : { nonce: 1 } }) };
+  };
+  assert.deepEqual(await c.gaslessCall({ relayer: 'http://r', accountId: 'g.testnet', storage: store, receiverId: 'ev.testnet', methodName: 'check_in', args: { guest: 'x.testnet' }, fetchImpl }), { hash: 'HX', gasless: true });
+  assert.deepEqual([posted.delegateAction.senderId, posted.delegateAction.receiverId, posted.delegateAction.actions[0].methodName, posted.delegateAction.actions[0].deposit], ['g.testnet', 'ev.testnet', 'check_in', 0n]);
+  const refusing = async (url, o) => (url.endsWith('/relay') ? { ok: false, status: 403, json: async () => ({ ok: false, error: 'outside check-in window' }) } : fetchImpl(url, o));
+  await assert.rejects(c.gaslessCall({ relayer: 'http://r', accountId: 'g.testnet', storage: store, receiverId: 'ev.testnet', methodName: 'cancel', fetchImpl: refusing }), /outside check-in window/);
+});

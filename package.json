@@ -8,5 +8,7 @@
     "demo:sim": "node scripts/demo-sim.mjs",
     "quote:dry": "node scripts/quote-dry.mjs",
     "serve": "node scripts/serve.mjs",
-    "view": "node scripts/view.mjs"
+    "view": "node scripts/view.mjs",
+    "relayer": "node relayer/server.mjs",
+    "relayer:demo": "node relayer/demo-testnet.mjs"
   } }

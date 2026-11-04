@@ -1,0 +1,40 @@
+# ShowUp gasless relayer (NEP-366) live run, NEAR TESTNET, 2026-11-04T07:00:06.446Z
+factory showup-factory-1793597558.testnet; RPC https://rpc.testnet.fastnear.com
+faucet account created: showup-relayer-1793775606.testnet
+faucet account created: showup-rhost-1793775606.testnet
+faucet account created: showup-rguest-a-1793775606.testnet
+faucet account created: showup-rguest-b-1793775606.testnet
+relayer showup-relayer-1793775606.testnet  host showup-rhost-1793775606.testnet  guest A showup-rguest-a-1793775606.testnet  guest B showup-rguest-b-1793775606.testnet
+create_event gasless-1793775606.showup-factory-1793597558.testnet (host showup-rhost-1793775606.testnet attaches 2.3988 NEAR): tx 8CC1uvP9SWV3zcyyeADafrayb6VeGoMbN3MgB84kFJup ok  https://testnet.nearblocks.io/txns/8CC1uvP9SWV3zcyyeADafrayb6VeGoMbN3MgB84kFJup
+windows: cancel until 2026-11-04T07:02:49.956Z, check-in until 2026-11-04T07:17:49.956Z
+rsvp showup-rguest-a-1793775606.testnet (guest pays 0.01 NEAR + own gas): tx 6HsmwGRxKqWEfhHDggnqK3vs79VpFuSxAbEjzcHeGVbn ok  https://testnet.nearblocks.io/txns/6HsmwGRxKqWEfhHDggnqK3vs79VpFuSxAbEjzcHeGVbn
+rsvp showup-rguest-b-1793775606.testnet (guest pays 0.01 NEAR + own gas): tx FhBbtJzuKN954EFvr35FkKn93f23mXaybz9VfVdjzQDH ok  https://testnet.nearblocks.io/txns/FhBbtJzuKN954EFvr35FkKn93f23mXaybz9VfVdjzQDH
+relayer listening on http://127.0.0.1:43447
+  [relayer] reject receiver showup-relayer-1793775606.testnet is not the factory or a <name>.showup-factory-1793597558.testnet escrow
+reject check: transfer 1 NEAR to the relayer -> HTTP 403 receiver showup-relayer-1793775606.testnet is not the factory or a <name>.showup-factory-1793597558.testnet escrow
+  [relayer] reject receiver showup-rguest-a-1793775606.testnet is not the factory or a <name>.showup-factory-1793597558.testnet escrow
+reject check: AddKey full access on the guest -> HTTP 403 receiver showup-rguest-a-1793775606.testnet is not the factory or a <name>.showup-factory-1793597558.testnet escrow
+  [relayer] reject receiver showup-demo-1793595312.testnet is not the factory or a <name>.showup-factory-1793597558.testnet escrow
+reject check: cancel on a non-factory receiver -> HTTP 403 receiver showup-demo-1793595312.testnet is not the factory or a <name>.showup-factory-1793597558.testnet escrow
+  [relayer] reject method rsvp is not allowed on escrow (allowed: check_in, cancel)
+reject check: rsvp with 0.01 NEAR attached -> HTTP 403 method rsvp is not allowed on escrow (allowed: check_in, cancel)
+  [relayer] reject attached deposit must be 0
+reject check: cancel with 1 yocto attached -> HTTP 403 attached deposit must be 0
+  [relayer] reject method settle is not allowed on escrow (allowed: check_in, cancel)
+reject check: settle (not allow-listed) -> HTTP 403 method settle is not allowed on escrow (allowed: check_in, cancel)
+  [relayer] reject showup-rguest-a-1793775606.testnet is not the host or a checker
+reject check: check_in signed by a guest (pre-flight) -> HTTP 403 showup-rguest-a-1793775606.testnet is not the host or a checker
+  [relayer] sent 4HsvijX9g9U6826KYiPdrWrFBUPnFJx9xE8gKMBPjAsV showup-rguest-a-1793775606.testnet gasless-1793775606.showup-factory-1793597558.testnet cancel ok 3973 ms
+GASLESS cancel by showup-rguest-a-1793775606.testnet: tx 4HsvijX9g9U6826KYiPdrWrFBUPnFJx9xE8gKMBPjAsV  https://testnet.nearblocks.io/txns/4HsvijX9g9U6826KYiPdrWrFBUPnFJx9xE8gKMBPjAsV
+  guest A balance 9.98981 -> 9.99981 NEAR: +0.01 NEAR (10000000000000000000000 yocto) (deposit is 0.01 NEAR)
+  relayer balance delta -0.0003000805221636 NEAR (-300080522163600000000 yocto); tokens burnt for gas 0.00030008 NEAR
+  guest A status: Cancelled
+waiting 135 s for check-in to open…
+  [relayer] sent 5tEUx7X71Nn1ZsrNECh5MyWDEosJJPan2K4XU39cPrpw showup-rhost-1793775606.testnet gasless-1793775606.showup-factory-1793597558.testnet check_in ok 2870 ms
+GASLESS check_in of showup-rguest-b-1793775606.testnet signed by host showup-rhost-1793775606.testnet: tx 5tEUx7X71Nn1ZsrNECh5MyWDEosJJPan2K4XU39cPrpw  https://testnet.nearblocks.io/txns/5tEUx7X71Nn1ZsrNECh5MyWDEosJJPan2K4XU39cPrpw
+  host balance delta +0 NEAR (0 yocto); relayer balance delta -0.0002546977453841 NEAR (-254697745384100000000 yocto)
+  guest B status: CheckedIn
+  [relayer] replay showup-rhost-1793775606.testnet:768d93274d6aafd454f90217c2e31cd0b3c247a26f99ff6e43681a29ff0869fa:276161297000002
+replay of the same signed check_in -> HTTP 200, replayed=true, hash 5tEUx7X71Nn1ZsrNECh5MyWDEosJJPan2K4XU39cPrpw (no second tx)
+summary: {"event":"gasless-1793775606.showup-factory-1793597558.testnet","relayer":"showup-relayer-1793775606.testnet","host":"showup-rhost-1793775606.testnet","guestA":"showup-rguest-a-1793775606.testnet","guestB":"showup-rguest-b-1793775606.testnet","cancel_tx":"4HsvijX9g9U6826KYiPdrWrFBUPnFJx9xE8gKMBPjAsV","check_in_tx":"5tEUx7X71Nn1ZsrNECh5MyWDEosJJPan2K4XU39cPrpw","guestA_delta_yocto":"10000000000000000000000","host_delta_yocto":"0","cancel_gasless":true,"checkin_gasless":true}
+log written to docs/testnet-relayer-2026-11-04.log

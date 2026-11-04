@@ -30,11 +30,12 @@ ul{padding-left:18px;margin:6px 0}a{color:#334155}
 <div class="card"><b>Recent check-ins</b><ul id="log"><li><small>None yet in this session.</small></li></ul></div>
 <p><small><a id="dash" href="#">← Host dashboard</a></small></p>
 <script type="module">
-import { viewCall, escapeHtml as e, parseCheckinPayload, checkinCheck, loadWallet, walletWasUsed, explorerTx, isAccountId, RPC_FALLBACKS } from '../widget/core.mjs';
+import { viewCall, escapeHtml as e, parseCheckinPayload, checkinCheck, loadWallet, walletWasUsed, explorerTx, isAccountId, RPC_FALLBACKS, gaslessCall } from '../widget/core.mjs';
 import { isPass, verifyPass, rpcAccessKey } from '../widget/pass.mjs';
 const seen = new Set(); // replay cache for this door
 const q = new URLSearchParams(location.search);
 const EVENT = q.get('event') || 'ethdenver-side.showup-factory-1793597558.testnet';
+const RELAYER = q.get('relayer') || null; // e.g. http://localhost:3030 (pnpm relayer)
 if (!isAccountId(EVENT)) throw new Error('bad event');
 const $ = (id) => document.getElementById(id);
 $('ev').textContent = EVENT; $('dash').href = `./?event=${encodeURIComponent(EVENT)}`;
@@ -76,8 +77,11 @@ async function lookup(text) {
   $('go').onclick = async () => {
     $('go').disabled = true; $('go').textContent = 'Confirm in your wallet…';
     try {
-      const out = await wallet.call(EVENT, 'check_in', { guest });
-      const h = out?.transaction?.hash;
+      // ?relayer=<url>: gasless check_in signed with the wallet's function-call key; falls back to the wallet on any error
+      const out = (await gaslessCall({ relayer: RELAYER, accountId: me, receiverId: EVENT, methodName: 'check_in', args: { guest } })
+        .catch((x) => { console.warn('gasless check-in unavailable, using the wallet:', x.message); return null; }))
+        ?? await wallet.call(EVENT, 'check_in', { guest });
+      const h = out?.hash ?? out?.transaction?.hash;
       box.innerHTML = `<div class="row"><span class="guest">${e(guest)}</span><span class="pill ok">CheckedIn ✓</span></div>${h ? `<p><a href="${explorerTx(h)}" target="_blank" rel="noreferrer">View tx</a></p>` : ''}`;
       if ($('log').querySelector('small')) $('log').innerHTML = '';
       $('log').insertAdjacentHTML('afterbegin', `<li>${new Date().toLocaleTimeString()} · ${e(guest)}${h ? ` · <a href="${explorerTx(h)}" target="_blank" rel="noreferrer">tx</a>` : ''}</li>`);

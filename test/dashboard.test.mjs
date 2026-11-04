@@ -1,6 +1,6 @@
 import { test } from 'node:test'; import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { projectPayouts, tally, fmtRow } from '../dashboard/logic.mjs';
+import { projectPayouts, tally, fmtRow, csvCell, toCsv, ledgerRows, ledgerCsv, CSV_COLUMNS, fetchEscrowTxns } from '../dashboard/logic.mjs';
 import { parseViewResponse } from '../widget/core.mjs';
 import { resolvePath } from '../scripts/serve.mjs';
 const fx = (n) => parseViewResponse(JSON.parse(readFileSync(new URL(`./fixtures/${n}`, import.meta.url))));
@@ -67,4 +67,57 @@ test('1Click proxy forwards dry quotes and maps outages to a JSON 502', async ()
   const unreachable = await run({ dry: true }, async () => { throw new Error('fetch failed'); });
   assert.equal(unreachable.status, 502);
   assert.equal((await run({ dry: false }, async () => assert.fail('must not forward'))).status, 400);
+});
+
+// nearblocks v1 /account/<id>/txns row shape. Hashes are the real ones from docs/testnet-e2e-2026-11-02.log; times are illustrative.
+const nb = (hash, from, method, ns, ok = true) => ({ transaction_hash: hash, predecessor_account_id: from, receiver_account_id: 'showup-demo-1793595312.testnet',
+  block_timestamp: ns, actions: [{ action: 'FUNCTION_CALL', method }], outcomes: { status: ok } });
+const DEMO_TXNS = [
+  nb('7ij9J5qUDfXd4iprguGNPmyMbe6KrWvuKwytjVsnR5gr', 'guest1-1793595336.testnet', 'rsvp', '1793595400000000000'),
+  nb('BoosPz7CHKaQppN1RgfBH5i82KrSfEtR3RGabsn7SaHe', 'guest2-1793595336.testnet', 'rsvp', '1793595410000000000'),
+  nb('JADwcmhU1tFRz3veGoHYLnCz6R6NpC4yGKSv8DGuwNYV', 'showup-demo-1793595312.testnet', 'check_in', '1793595500000000000'),
+  nb('FAILEDsettLe11111111111111111111111111111111', 'guest2-1793595336.testnet', 'settle', '1793595590000000000', false),
+  nb('5d5HTC8v9vAzPSuhed5MJZsGUypyr5GL6Rr4GkWmyBkT', 'guest2-1793595336.testnet', 'settle', '1793595600000000000'),
+];
+
+test('CSV cells follow RFC 4180 and defuse spreadsheet formulas', () => {
+  assert.equal(csvCell('plain'), 'plain'); assert.equal(csvCell(null), ''); assert.equal(csvCell(0), '0');
+  assert.equal(csvCell('a,b'), '"a,b"'); assert.equal(csvCell('say "hi"'), '"say ""hi"""'); assert.equal(csvCell('l1\nl2'), '"l1\nl2"'); assert.equal(csvCell('x\r'), '"x\r"');
+  assert.equal(csvCell('=HYPERLINK("x")'), '"\'=HYPERLINK(""x"")"'); assert.equal(csvCell('+1'), "'+1"); assert.equal(csvCell('@a'), "'@a");
+  assert.equal(toCsv(['a', 'b'], [{ a: 1, b: 'x,y' }, { a: '', b: undefined }]), 'a,b\r\n1,"x,y"\r\n,\r\n');
+});
+test('ledger CSV for the settled demo event: one row per guest with deposit/payout txs', () => {
+  const csv = ledgerCsv('showup-demo-1793595312.testnet', fx('demo-get_info.rpc.json'), fx('demo-get_guests.rpc.json'), DEMO_TXNS);
+  const lines = csv.split('\r\n');
+  assert.equal(lines[0], CSV_COLUMNS.join(',')); assert.equal(lines[0], 'event,network,guest_account,status,rsvp_time_utc,deposit_near,deposit_tx,refund_near,refund_time_utc,refund_tx,payout_near,payout_time_utc,payout_tx,explorer_url');
+  assert.equal(lines.length, 4); assert.equal(lines.at(-1), '');
+  assert.equal(lines[1], 'showup-demo-1793595312.testnet,near-testnet,guest1-1793595336.testnet,attended,2026-11-02T04:56:40.000Z,0.1,7ij9J5qUDfXd4iprguGNPmyMbe6KrWvuKwytjVsnR5gr,,,,0.2,2026-11-02T05:00:00.000Z,5d5HTC8v9vAzPSuhed5MJZsGUypyr5GL6Rr4GkWmyBkT,https://testnet.nearblocks.io/txns/7ij9J5qUDfXd4iprguGNPmyMbe6KrWvuKwytjVsnR5gr');
+  assert.equal(lines[2], 'showup-demo-1793595312.testnet,near-testnet,guest2-1793595336.testnet,no_show_forfeited,2026-11-02T04:56:50.000Z,0.1,BoosPz7CHKaQppN1RgfBH5i82KrSfEtR3RGabsn7SaHe,,,,0,,,https://testnet.nearblocks.io/txns/BoosPz7CHKaQppN1RgfBH5i82KrSfEtR3RGabsn7SaHe');
+});
+test('ledger rows: cancel refunds, unsettled payouts blank, host dust row, missing txs blank', () => {
+  const info = { host: 'host.testnet', deposit: (10n ** 24n).toString(), settled: false };
+  const g = [['a.testnet', 'CheckedIn'], ['b.testnet', 'Rsvp'], ['c.testnet', 'Cancelled']];
+  const txns = [{ transaction_hash: 'CANCELc', predecessor_account_id: 'c.testnet', receiver_account_id: 'ev.testnet', block_timestamp: '1793600000000000000', actions: [{ action: 'FUNCTION_CALL', method: 'cancel' }], outcomes: { status: true } }];
+  const rows = ledgerRows('ev.testnet', info, g, txns);
+  const c = rows.find((r) => r.guest_account === 'c.testnet');
+  assert.deepEqual([c.status, c.refund_near, c.refund_tx, c.refund_time_utc, c.deposit_tx, c.explorer_url], ['cancelled_refunded', '1', 'CANCELc', '2026-11-02T06:13:20.000Z', '', 'https://testnet.nearblocks.io/address/c.testnet']);
+  assert.ok(rows.every((r) => r.payout_near === '' && r.payout_tx === ''));
+  assert.equal(rows.find((r) => r.guest_account === 'b.testnet').status, 'rsvp_not_checked_in');
+  const settled = ledgerRows('ev.testnet', { ...info, settled: true }, [['a', 'CheckedIn'], ['b', 'CheckedIn'], ['c', 'CheckedIn'], ['d', 'Rsvp']], []);
+  assert.deepEqual(settled.at(-1), { event: 'ev.testnet', network: 'near-testnet', guest_account: 'host.testnet', status: 'host_rounding_dust', rsvp_time_utc: '', deposit_near: '',
+    deposit_tx: '', refund_near: '', refund_time_utc: '', refund_tx: '', payout_near: '0.000000000000000000000001', payout_time_utc: '', payout_tx: '', explorer_url: 'https://testnet.nearblocks.io/address/host.testnet' });
+  assert.equal(settled[0].payout_near, '1.333333333333333333333333');
+});
+test('fetchEscrowTxns pages through nearblocks and degrades to [] on errors', async () => {
+  const urls = [];
+  const page = (n) => Array.from({ length: n }, (_, i) => ({ transaction_hash: `h${i}` }));
+  const f = async (u) => { urls.push(u); return { ok: true, json: async () => ({ txns: urls.length === 1 ? page(25) : page(3) }) }; };
+  assert.equal((await fetchEscrowTxns('ev.testnet', { fetchImpl: f })).length, 28);
+  assert.equal(urls[0], 'https://api-testnet.nearblocks.io/v1/account/ev.testnet/txns?page=1&per_page=25&order=asc');
+  assert.deepEqual(await fetchEscrowTxns('ev.testnet', { fetchImpl: async () => { throw new Error('offline'); } }), []);
+  assert.deepEqual(await fetchEscrowTxns('ev.testnet', { fetchImpl: async () => ({ ok: false, status: 429 }) }), []);
+});
+test('dashboard has an Export CSV button wired to ledgerCsv', () => {
+  const h = readFileSync(new URL('../dashboard/index.html', import.meta.url), 'utf8');
+  assert.match(h, /<button id="csv" type="button">Export CSV<\/button>/); assert.match(h, /ledgerCsv\(id, info, guests, txns\)/);
 });
