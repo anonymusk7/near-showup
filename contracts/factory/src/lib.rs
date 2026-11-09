@@ -9,6 +9,8 @@ const INIT_GAS: Gas = Gas::from_tgas(30);
 const CALLBACK_GAS: Gas = Gas::from_tgas(15);
 /// Headroom on top of code storage for the escrow state (guests map, etc.).
 const STATE_BUFFER: NearToken = NearToken::from_millinear(500);
+/// Same cap as the escrow's MAX_CAPACITY (bounded guests map and settle loop); checked here so it fails before any deposit moves.
+pub const MAX_CAPACITY: u32 = 200;
 
 #[near(serializers = [json])]
 #[derive(Clone, Copy)]
@@ -46,6 +48,7 @@ impl Factory {
         require!(valid_name(&name), "invalid name: 2-32 chars of a-z 0-9 - _");
         require!(!self.events.contains_key(&name), "event name taken");
         require!(capacity > 0 && deposit.as_yoctonear() > 0, "capacity and deposit must be > 0");
+        require!(capacity <= MAX_CAPACITY, format!("capacity must be at most {MAX_CAPACITY}"));
         let (c, s, e) = (windows.cancel_deadline_ns.0, windows.checkin_start_ns.0, windows.checkin_end_ns.0);
         require!(c <= s && s < e, "bad windows");
         let attached = env::attached_deposit();
@@ -178,6 +181,16 @@ mod tests {
     }
     #[test] #[should_panic(expected = "invalid name")] fn bad_name() {
         testing_env!(ctx("alice.testnet", 5 * D)); let mut f = Factory::new(); create(&mut f, "Bad.Name");
+    }
+    #[test] #[should_panic(expected = "capacity must be at most 200")] fn capacity_above_max() {
+        testing_env!(ctx("alice.testnet", 5 * D)); let mut f = Factory::new();
+        f.create_event("party".into(), NearToken::from_near(1), MAX_CAPACITY + 1, win(100, 200, 300));
+    }
+    #[test] fn capacity_at_max_ok() {
+        testing_env!(ctx("alice.testnet", 5 * D)); let mut f = Factory::new();
+        f.create_event("party".into(), NearToken::from_near(1), MAX_CAPACITY, win(100, 200, 300));
+        // the factory embeds the escrow as wasm (no crate dependency): keep the two caps in sync
+        assert!(include_str!("../../escrow/src/lib.rs").contains(&format!("pub const MAX_CAPACITY: u32 = {MAX_CAPACITY};")));
     }
     #[test] #[should_panic(expected = "bad windows")] fn bad_windows() {
         testing_env!(ctx("alice.testnet", 5 * D)); let mut f = Factory::new();

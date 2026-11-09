@@ -5,6 +5,7 @@ use near_sdk::{env, near, require, AccountId, NearToken, PanicOnDefault, Promise
 
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Copy, PartialEq, Debug)]
+/// `Cancelled` is no longer stored (cancel removes the guest) but stays for JSON compatibility with older escrows.
 pub enum Status { Rsvp, Cancelled, CheckedIn }
 
 #[near(serializers = [json])]
@@ -19,6 +20,9 @@ pub fn settle_math(deposit: u128, attendees: u128, no_shows: u128) -> (u128, u12
     (deposit + share, pool - share * attendees)
 }
 
+/// Upper bound on guests: keeps the guests map (storage) and the settle loop (gas) bounded.
+pub const MAX_CAPACITY: u32 = 200;
+
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
 pub struct Event {
@@ -32,6 +36,8 @@ pub struct Event {
     guests: IterableMap<AccountId, Status>,
     active: u32,
     settled: bool,
+    /// Cancellations so far; cancelled guests are removed from `guests` to free their storage.
+    cancelled: u32,
 }
 
 #[near]
@@ -39,11 +45,11 @@ impl Event {
     #[init]
     pub fn new(host: AccountId, deposit: NearToken, capacity: u32,
                cancel_deadline_ns: u64, checkin_start_ns: u64, checkin_end_ns: u64) -> Self {
-        require!(capacity > 0, "capacity must be > 0");
+        require!(capacity > 0 && capacity <= MAX_CAPACITY, format!("capacity must be 1..={MAX_CAPACITY}"));
         require!(deposit.as_yoctonear() > 0, "deposit must be > 0");
         require!(cancel_deadline_ns <= checkin_start_ns && checkin_start_ns < checkin_end_ns, "bad windows");
         Self { host, checkers: vec![], deposit, capacity, cancel_deadline_ns,
-               checkin_start_ns, checkin_end_ns, guests: IterableMap::new(b"g"), active: 0, settled: false }
+               checkin_start_ns, checkin_end_ns, guests: IterableMap::new(b"g"), active: 0, settled: false, cancelled: 0 }
     }
 
     #[payable]
@@ -53,7 +59,7 @@ impl Event {
         require!(att == self.deposit, "attach exactly the deposit");
         require!(env::block_timestamp() < self.cancel_deadline_ns, "RSVP closed");
         require!(self.active < self.capacity, "event full");
-        if let Some(s) = self.guests.get(&who) { require!(*s == Status::Cancelled, "already RSVPed"); }
+        require!(matches!(self.guests.get(&who), None | Some(Status::Cancelled)), "already RSVPed");
         self.guests.insert(who, Status::Rsvp);
         self.active += 1;
     }
@@ -62,8 +68,9 @@ impl Event {
         let who = env::predecessor_account_id();
         require!(env::block_timestamp() < self.cancel_deadline_ns, "cancellation deadline passed");
         require!(self.guests.get(&who) == Some(&Status::Rsvp), "no active RSVP");
-        self.guests.insert(who.clone(), Status::Cancelled);
+        self.guests.remove(&who); // frees the entry: the map never holds more than `capacity` guests
         self.active -= 1;
+        self.cancelled += 1;
         Promise::new(who).transfer(self.deposit)
     }
 
@@ -108,7 +115,7 @@ impl Event {
         near_sdk::serde_json::json!({"host": self.host, "deposit": self.deposit, "capacity": self.capacity,
           "active": self.active, "cancel_deadline_ns": self.cancel_deadline_ns.to_string(),
           "checkin_start_ns": self.checkin_start_ns.to_string(), "checkin_end_ns": self.checkin_end_ns.to_string(),
-          "settled": self.settled, "checkers": self.checkers})
+          "settled": self.settled, "checkers": self.checkers, "cancelled": self.cancelled})
     }
 
     fn only_host(&self) { require!(env::predecessor_account_id() == self.host, "host only"); }
@@ -123,7 +130,8 @@ mod tests {
     const D: u128 = 1_000_000_000_000_000_000_000_000; // 1 NEAR
     fn acc(s: &str) -> AccountId { format!("{s}.testnet").parse().unwrap() }
     fn ctx(who: &str, t: u64, dep: u128) {
-        testing_env!(VMContextBuilder::new().predecessor_account_id(acc(who))
+        let used = env::storage_usage(); // testing_env! resets the counter; keep it so storage deltas add up across calls
+        testing_env!(VMContextBuilder::new().predecessor_account_id(acc(who)).storage_usage(used)
             .block_timestamp(t).attached_deposit(NearToken::from_yoctonear(dep)).build());
     }
     fn ev() -> Event { ctx("host", 0, 0); Event::new(acc("host"), NearToken::from_yoctonear(D), 10, 100, 200, 300) }
@@ -152,6 +160,64 @@ mod tests {
         ctx("host",0,0); let mut e = Event::new(acc("host"), NearToken::from_yoctonear(D), 1, 100, 200, 300);
         ctx("a",1,D); e.rsvp(); ctx("b",1,D); e.rsvp(); }
     #[test] fn re_rsvp_after_cancel() { let mut e = ev(); ctx("a",1,D); e.rsvp(); e.cancel(); ctx("a",2,D); e.rsvp(); assert_eq!(e.get_status(acc("a")), Some(Status::Rsvp)); }
+    fn used(e: &mut Event) -> u64 { e.guests.flush(); env::storage_usage() }
+    #[test] #[should_panic(expected = "guest has no active RSVP")] fn double_checkin() {
+        let mut e = ev(); ctx("a",1,D); e.rsvp(); ctx("host",250,0); e.check_in(acc("a")); e.check_in(acc("a")); }
+    #[test] #[should_panic(expected = "guest has no active RSVP")] fn checkin_cancelled_guest() {
+        let mut e = ev(); ctx("a",1,D); e.rsvp(); e.cancel(); ctx("host",250,0); e.check_in(acc("a")); }
+    #[test] #[should_panic(expected = "deadline passed")] fn cancel_after_checkin() {
+        let mut e = ev(); ctx("a",1,D); e.rsvp(); ctx("host",250,0); e.check_in(acc("a")); ctx("a",250,0); e.cancel(); }
+    #[test] #[should_panic(expected = "no active RSVP")] fn cancel_checked_in_status_before_deadline() {
+        // windows make this unreachable (check-in opens after the deadline); the status check is the second guard
+        let mut e = ev(); ctx("a",1,D); e.rsvp(); e.guests.insert(acc("a"), Status::CheckedIn); e.cancel(); }
+    #[test] #[should_panic(expected = "outside check-in")] fn late_checkin() { let mut e = ev(); ctx("a",1,D); e.rsvp(); ctx("host",301,0); e.check_in(acc("a")); }
+    #[test] #[should_panic(expected = "RSVP closed")] fn late_rsvp() { let mut e = ev(); ctx("a",100,D); e.rsvp(); }
+    #[test] #[should_panic(expected = "already RSVPed")] fn double_rsvp() { let mut e = ev(); ctx("a",1,D); e.rsvp(); e.rsvp(); }
+    #[test] #[should_panic(expected = "capacity must be 1..=200")] fn capacity_above_max() {
+        ctx("host",0,0); Event::new(acc("host"), NearToken::from_yoctonear(D), MAX_CAPACITY + 1, 100, 200, 300); }
+    #[test] #[should_panic(expected = "capacity must be 1..=200")] fn capacity_zero() {
+        ctx("host",0,0); Event::new(acc("host"), NearToken::from_yoctonear(D), 0, 100, 200, 300); }
+    #[test] fn capacity_at_max_ok() { ctx("host",0,0); Event::new(acc("host"), NearToken::from_yoctonear(D), MAX_CAPACITY, 100, 200, 300); }
+    #[test] fn cancel_frees_map_entry() {
+        let mut e = ev(); let base = used(&mut e);
+        ctx("a",1,D); e.rsvp(); ctx("b",1,D); e.rsvp();
+        let after_rsvp = used(&mut e); assert!(after_rsvp > base);
+        ctx("a",2,0); e.cancel();
+        let after_cancel = used(&mut e);
+        assert!(after_cancel < after_rsvp, "cancel must free storage");
+        assert_eq!(e.get_guests(), vec![(acc("b"), Status::Rsvp)]);
+        assert_eq!(e.get_status(acc("a")), None);
+        assert_eq!(e.get_info()["cancelled"], 1); assert_eq!(e.get_info()["active"], 1);
+    }
+    #[test] fn sybil_rsvp_cancel_loop_does_not_grow_storage() {
+        let mut e = ev(); let base = used(&mut e);
+        for i in 0..500 { let g = format!("sybil{i}"); ctx(&g, 1, D); e.rsvp(); e.cancel(); let _ = used(&mut e); }
+        assert!(e.get_guests().is_empty());
+        assert_eq!(used(&mut e), base);
+        assert_eq!(e.get_info()["cancelled"], 500); assert_eq!(e.get_info()["active"], 0);
+        // the event still works afterwards
+        ctx("a",2,D); e.rsvp(); assert_eq!(e.get_status(acc("a")), Some(Status::Rsvp));
+    }
+    #[test] #[should_panic(expected = "already settled")] fn resettle_after_payouts() {
+        let mut e = ev(); ctx("a",1,D); e.rsvp(); ctx("host",250,0); e.check_in(acc("a"));
+        ctx("x",301,0); assert_eq!(e.settle().len(), 1); e.settle(); }
+    #[test] fn settle_by_any_account_after_end() {
+        let mut e = ev(); ctx("a",1,D); e.rsvp(); ctx("host",250,0); e.check_in(acc("a"));
+        ctx("random-stranger",301,0); let p = e.settle();
+        assert_eq!(p.len(), 1); assert_eq!(p[0].account_id, acc("a")); assert_eq!(p[0].amount.as_yoctonear(), D);
+        assert_eq!(e.get_info()["settled"], true);
+    }
+    #[test] fn settle_zero_guests_empty_payouts() { let mut e = ev(); ctx("x",301,0); assert!(e.settle().is_empty()); }
+    #[test] fn rounding_dust_to_host() {
+        let mut e = ev();
+        for g in ["a","b","c","d"] { ctx(g,1,D); e.rsvp(); }
+        for g in ["a","b","c"] { ctx("host",250,0); e.check_in(acc(g)); }
+        ctx("x",301,0); let p = e.settle();
+        assert_eq!(p.iter().filter(|x| x.account_id != acc("host")).map(|x| x.amount.as_yoctonear()).collect::<Vec<_>>(), vec![D + D / 3; 3]);
+        let host = p.iter().find(|x| x.account_id == acc("host")).expect("dust row");
+        assert_eq!(host.amount.as_yoctonear(), D - 3 * (D / 3));
+        assert_eq!(p.iter().map(|x| x.amount.as_yoctonear()).sum::<u128>(), 4 * D);
+    }
     #[test] fn no_attendees_pool_to_host() { assert_eq!(settle_math(D, 0, 3), (0, 3*D)); }
     #[test] fn settle_conservation_property() {
         // deterministic pseudo-random sweep: sum of payouts == deposit * (attendees + no_shows)
