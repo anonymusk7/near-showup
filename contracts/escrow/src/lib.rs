@@ -58,8 +58,8 @@ impl Event {
         let att = env::attached_deposit();
         require!(att == self.deposit, "attach exactly the deposit");
         require!(env::block_timestamp() < self.cancel_deadline_ns, "RSVP closed");
-        require!(self.active < self.capacity, "event full");
         require!(matches!(self.guests.get(&who), None | Some(Status::Cancelled)), "already RSVPed");
+        require!(self.active < self.capacity, "event full");
         self.guests.insert(who, Status::Rsvp);
         self.active += 1;
     }
@@ -159,6 +159,9 @@ mod tests {
     #[test] #[should_panic(expected = "event full")] fn capacity() {
         ctx("host",0,0); let mut e = Event::new(acc("host"), NearToken::from_yoctonear(D), 1, 100, 200, 300);
         ctx("a",1,D); e.rsvp(); ctx("b",1,D); e.rsvp(); }
+    #[test] #[should_panic(expected = "already RSVPed")] fn double_rsvp_on_full_event_says_already_rsvped() {
+        ctx("host",0,0); let mut e = Event::new(acc("host"), NearToken::from_yoctonear(D), 1, 100, 200, 300);
+        ctx("a",1,D); e.rsvp(); ctx("a",2,D); e.rsvp(); }
     #[test] fn re_rsvp_after_cancel() { let mut e = ev(); ctx("a",1,D); e.rsvp(); e.cancel(); ctx("a",2,D); e.rsvp(); assert_eq!(e.get_status(acc("a")), Some(Status::Rsvp)); }
     fn used(e: &mut Event) -> u64 { e.guests.flush(); env::storage_usage() }
     #[test] #[should_panic(expected = "guest has no active RSVP")] fn double_checkin() {
