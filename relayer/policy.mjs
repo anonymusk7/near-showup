@@ -108,3 +108,23 @@ export function preflight({ method, sender, args, info, status, nowNs }) {
   }
   return { ok: false, reason: `no pre-flight for ${method}` };
 }
+
+/**
+ * On-chain key check (pure): `ak` is the RPC view_access_key result for (sender_id, delegate public key), or null if the
+ * key isn't on the account. Mirrors the runtime's DelegateAction key checks so a random key or a replayed (already used)
+ * nonce is refused here instead of failing on-chain at the relayer's expense.
+ */
+export function checkAccessKey(ak, d) {
+  const no = (reason) => ({ ok: false, reason });
+  if (!ak) return no(`public key is not an access key of ${d.senderId}`);
+  if (d.nonce <= BigInt(ak.nonce)) return no(`nonce already used (replay): delegate nonce ${d.nonce} <= key nonce ${ak.nonce}`);
+  const fc = ak.permission?.FunctionCall;
+  if (ak.permission !== 'FullAccess' && !fc) return no('unsupported access key permission');
+  if (fc) {
+    if (fc.receiver_id !== d.receiverId) return no(`function-call key is for ${fc.receiver_id}, not ${d.receiverId}`);
+    const names = fc.method_names || [];
+    const missing = d.actions.map((a) => a.methodName).filter((m) => names.length && !names.includes(m));
+    if (missing.length) return no(`function-call key does not allow ${missing.join(', ')}`);
+  }
+  return { ok: true };
+}

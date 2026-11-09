@@ -21,10 +21,11 @@ export async function rpc(method, params, { rpcs = RPCS, fetchImpl = fetch, time
         if (j.error.code === -429 || /TIMEOUT|-429/.test(e.message)) { last = e; continue; }
         throw e;
       }
-      if (j.result?.error) throw new Error(`RPC ${method}: ${j.result.error}`);
+      if (j.result?.error) { const e = new Error(`RPC ${method}: ${j.result.error}`); e.rpc = j.result.error; throw e; } // an answer, not an outage
       return j.result;
     } catch (e) { if (e.rpc && !/TIMEOUT|-429/.test(e.message)) throw e; last = e; }
   }
+  last.unreachable = true; // every RPC failed at the network / rate-limit level
   throw last;
 }
 export const view = async (account_id, method_name, args = {}, o) => {
@@ -33,6 +34,11 @@ export const view = async (account_id, method_name, args = {}, o) => {
 };
 export const viewAccount = (account_id, o) => rpc('query', { request_type: 'view_account', finality: 'final', account_id }, o);
 export const finalBlock = (o) => rpc('block', { finality: 'final' }, o);
+/** view_access_key, or null when the key (or the account) doesn't exist. Other errors (RPC down) throw. */
+export async function accessKey(account_id, public_key, o) {
+  try { return await rpc('query', { request_type: 'view_access_key', finality: 'final', account_id, public_key }, o); }
+  catch (e) { if (e.rpc && /UNKNOWN_ACCESS_KEY|UNKNOWN_ACCOUNT|does not exist/i.test(e.message)) return null; throw e; }
+}
 
 /** Reads ~/.near-credentials/testnet/<account>.json (near-cli legacy keychain). The secret never leaves this process. */
 export function loadKey(accountId, dir = path.join(os.homedir(), '.near-credentials', 'testnet')) {

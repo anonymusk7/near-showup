@@ -1,8 +1,8 @@
 import { test } from 'node:test'; import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as N from '../lib/nep366.mjs';
-import { checkDelegate, receiverKind, verifyEscrowWithFactory, preflight, TGAS } from '../relayer/policy.mjs';
-import { createRelay } from '../relayer/server.mjs';
+import { checkDelegate, checkAccessKey, receiverKind, verifyEscrowWithFactory, preflight, TGAS } from '../relayer/policy.mjs';
+import { createRelay, friendlySendError, health, isRpcDown, RPC_DOWN_ERROR } from '../relayer/server.mjs';
 import { b58encode } from '../widget/vendor/crypto.js';
 const fx = JSON.parse(readFileSync(new URL('./fixtures/nep366-nearjs.json', import.meta.url)));
 const hex = (u) => Buffer.from(u).toString('hex');
@@ -114,16 +114,19 @@ test('factory verification and pre-flight', async () => {
   assert.match(preflight({ method: 'check_in', sender: 'h.testnet', args: { guest: 'g' }, info, status: 'Rsvp', nowNs: 99 }).reason, /window/);
   assert.match(preflight({ method: 'check_in', sender: 'h.testnet', args: { guest: 'g' }, info: { ...info, settled: true }, status: 'Rsvp', nowNs: 150 }).reason, /settled/);
 });
+const mockChain = (o = {}) => ({ blockHeight: async () => H, nowNs: () => 50n, accessKey: async () => ({ nonce: 0, permission: 'FullAccess' }),
+  send: async () => assert.fail('must not send'),
+  view: async (a, m, args) => m === 'get_event' ? (args.name === 'ev' ? { account_id: EV } : null)
+    : m === 'get_info' ? { host: 'h', cancel_deadline_ns: '100', checkin_start_ns: '100', checkin_end_ns: '200', settled: false } : 'Rsvp', ...o });
+const body = (o, acts) => ({ signed_delegate: N.encodeSignedDelegateBase64(sign(o, acts)) });
 test('relay handler: sends accepted actions once, rejects others without sending', async () => {
   const sent = [];
-  const chain = { blockHeight: async () => H, nowNs: () => 50n, send: async (s) => { sent.push(s); return { hash: 'HASH', failures: [] }; },
-    view: async (a, m, args) => m === 'get_event' ? (args.name === 'ev' ? { account_id: EV } : null)
-      : m === 'get_info' ? { host: 'h', cancel_deadline_ns: '100', checkin_start_ns: '100', checkin_end_ns: '200', settled: false } : 'Rsvp' };
+  const chain = mockChain({ send: async (s) => { sent.push(s); return { hash: 'HASH', failures: [] }; } });
   const relay = createRelay({ factory: F, relayerId: 'relayer.testnet', chain });
-  const body = { signed_delegate: N.encodeSignedDelegateBase64(sign()) };
-  const [st, ok] = await relay(body);
+  const b = body();
+  const [st, ok] = await relay(b);
   assert.equal(st, 200); assert.equal(ok.hash, 'HASH'); assert.equal(ok.explorer, 'https://testnet.nearblocks.io/txns/HASH');
-  const [st2, again] = await relay(body); // replay / client retry: same answer, not sent again
+  const [st2, again] = await relay(b); // replay / client retry: same answer, not sent again
   assert.deepEqual([st2, again.hash, again.replayed], [200, 'HASH', true]);
   const [both1, both2] = await Promise.all([relay({ signed_delegate: N.encodeSignedDelegateBase64(sign({ nonce: 6n })) }), relay({ signed_delegate: N.encodeSignedDelegateBase64(sign({ nonce: 6n })) })]);
   assert.deepEqual([both1[0], both2[0], both2[1].replayed], [200, 200, true]); // concurrent duplicates share one send
@@ -145,4 +148,73 @@ test('client helper builds nonce/height from RPC and POSTs base64 to the relayer
   await assert.rejects(N.relaySignedDelegate('http://r', s, { fetchImpl: async () => ({ ok: false, status: 403, json: async () => ({ ok: false, error: 'nope' }) }) }), /relayer: nope/);
   const store = { getItem: (k) => (k === 'near-api-js:keystore:guest.testnet:testnet' ? SK : null) };
   assert.equal(N.browserFunctionCallKey(store, 'guest.testnet'), SK); assert.equal(N.browserFunctionCallKey(store, 'x.testnet'), null);
+});
+
+test('checkAccessKey: key must be on sender, nonce unused, FC key scoped to receiver + method', () => {
+  const d = sign().delegateAction; // nonce 5, receiver EV, method cancel
+  assert.equal(checkAccessKey({ nonce: 4, permission: 'FullAccess' }, d).ok, true);
+  assert.match(checkAccessKey(null, d).reason, /not an access key of guest\.testnet/);
+  assert.match(checkAccessKey({ nonce: 5, permission: 'FullAccess' }, d).reason, /nonce already used \(replay\)/);
+  assert.match(checkAccessKey({ nonce: '9', permission: 'FullAccess' }, d).reason, /replay/);
+  const fc = (receiver_id, method_names) => ({ nonce: 1, permission: { FunctionCall: { allowance: null, receiver_id, method_names } } });
+  assert.equal(checkAccessKey(fc(EV, []), d).ok, true, 'empty method_names = any method');
+  assert.equal(checkAccessKey(fc(EV, ['rsvp', 'cancel']), d).ok, true);
+  assert.match(checkAccessKey(fc(`other.${F}`, []), d).reason, /key is for other\./);
+  assert.match(checkAccessKey(fc(EV, ['rsvp']), d).reason, /does not allow cancel/);
+});
+test('relay: random-key sender, used nonce, wrong FC key are rejected without sending (403)', async () => {
+  const keys = {
+    'random key': async () => null,
+    'replay after restart': async () => ({ nonce: 5, permission: 'FullAccess' }), // signed nonce 5 already used on-chain
+    'FC key for another receiver': async () => ({ nonce: 0, permission: { FunctionCall: { receiver_id: `zz.${F}`, method_names: [] } } }),
+    'FC key without the method': async () => ({ nonce: 0, permission: { FunctionCall: { receiver_id: EV, method_names: ['rsvp'] } } }),
+  };
+  const asked = [];
+  for (const [name, accessKey] of Object.entries(keys)) {
+    const relay = createRelay({ factory: F, relayerId: 'relayer.testnet', chain: mockChain({ accessKey: async (a, pk) => { asked.push([a, pk]); return accessKey(); } }) });
+    const [st, r] = await relay(body());
+    assert.equal(st, 403, name); assert.equal(r.ok, false); assert.ok(r.error, name);
+  }
+  assert.deepEqual(asked[0], ['guest.testnet', PK]);
+});
+test('relay: RPC outage before sending -> 503 retryable, nothing sent, not cached', async () => {
+  const down = async () => { throw new TypeError('fetch failed'); };
+  for (const o of [{ blockHeight: down }, { accessKey: down }, { view: down }, { view: async (a, m) => (m === 'get_event' ? { account_id: EV } : down()) }]) {
+    const relay = createRelay({ factory: F, relayerId: 'relayer.testnet', chain: mockChain(o) });
+    const [st, r] = await relay(body());
+    assert.deepEqual([st, r], [503, { ok: false, error: RPC_DOWN_ERROR, retryable: true }], Object.keys(o).join());
+  }
+  // after the outage the same signed action goes through (the 503 wasn't cached as a replay)
+  let up = false, sent = 0;
+  const relay = createRelay({ factory: F, relayerId: 'relayer.testnet', chain: mockChain({ blockHeight: async () => { if (!up) throw new Error('connect ECONNREFUSED'); return H; },
+    send: async () => { sent++; return { hash: 'H2', failures: [] }; } }) });
+  assert.equal((await relay(body()))[0], 503); up = true;
+  const [st, r] = await relay(body()); assert.deepEqual([st, r.hash, r.replayed, sent], [200, 'H2', undefined, 1]);
+  // an RPC *answer* (e.g. escrow has no contract) stays a 403 policy rejection
+  const answer = Object.assign(new Error('RPC query: CodeDoesNotExist'), { rpc: { name: 'HANDLER_ERROR' } });
+  assert.equal(isRpcDown(answer), false); assert.equal(isRpcDown(Object.assign(new Error('x'), { unreachable: true })), true);
+  assert.equal(isRpcDown(new Error('view of ev-500.testnet failed')), false);
+});
+test('relay: relayer out of funds -> 503 RELAYER_OUT_OF_FUNDS; other send errors stay 502', async () => {
+  const broke = new Error('RPC send_tx: {"name":"INVALID_TRANSACTION","info":{"InvalidTransaction":{"NotEnoughBalance":{"signer_id":"relayer.testnet","balance":"1","cost":"2"}}}}');
+  const relay = createRelay({ factory: F, relayerId: 'relayer.testnet', chain: mockChain({ send: async () => { throw broke; } }) });
+  const [st, r] = await relay(body());
+  assert.equal(st, 503);
+  assert.deepEqual(r, { ok: false, retryable: false, code: 'RELAYER_OUT_OF_FUNDS',
+    error: 'The gasless relayer is out of testnet NEAR; nothing was charged to you. Use your wallet instead (or top up relayer.testnet).' });
+  assert.equal(friendlySendError(new Error('LackBalanceForState {"account_id":"relayer.testnet"}'), 'relayer.testnet').code, 'RELAYER_OUT_OF_FUNDS');
+  assert.equal(friendlySendError(new Error('NotEnoughBalance {"signer_id":"someone.testnet"}'), 'relayer.testnet'), null);
+  assert.equal(friendlySendError(new Error('Transaction nonce 5 must be larger'), 'relayer.testnet'), null);
+  const other = createRelay({ factory: F, relayerId: 'relayer.testnet', chain: mockChain({ send: async () => { throw new Error('boom'); } }) });
+  assert.deepEqual(await other(body()), [502, { ok: false, error: 'boom' }]);
+});
+test('health reports relayer balance, low funds, and survives an RPC outage', async () => {
+  const info = { relayer: 'relayer.testnet', factory: F, network: 'testnet' };
+  assert.deepEqual(await health(info, { balance: async () => '3' + '0'.repeat(23) }),
+    { ok: true, ...info, rpc: 'ok', balance_yocto: '3' + '0'.repeat(23), balance_near: '0.3000', low_funds: true });
+  assert.equal((await health(info, { balance: async () => '12' + '0'.repeat(24) })).low_funds, false);
+  assert.equal((await health(info, { balance: async () => '12' + '0'.repeat(24) })).balance_near, '12.0000');
+  assert.deepEqual(await health(info, { balance: async () => { throw new TypeError('fetch failed'); } }),
+    { ok: true, ...info, rpc: 'unreachable', balance_yocto: null, balance_near: null, low_funds: null });
+  assert.deepEqual(await health(info), { ok: true, ...info });
 });
