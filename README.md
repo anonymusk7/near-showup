@@ -44,7 +44,7 @@ Status: work in progress (NEAR HACKATHON, Nov 2026).
 
 ## Run
 ```
-# needs Rust 1.86 + wasm32-unknown-unknown target, Node 20.11+, pnpm
+# needs rustup (installs Rust 1.86 + the wasm32-unknown-unknown target from rust-toolchain), Node 20.11+, pnpm
 pnpm test            # builds escrow wasm, cargo tests (escrow + factory), node tests
 pnpm build:contract  # escrow wasm, then the factory wasm that embeds it
 pnpm serve           # http://localhost:8080/widget/demo.html and /dashboard/ (port busy? pnpm serve 8081)
