@@ -7,6 +7,7 @@ one_liner: RSVP deposits for events, escrowed by a NEAR contract; no-shows' depo
 near: [rust near-sdk 5.5 escrow + factory contracts (sub-accounts, batched receipts, callbacks), testnet JSON-RPC from the browser, NEAR Intents 1Click dry quotes]
 network: testnet (1Click quotes: mainnet, dry:true only)
 try_it: pnpm test && pnpm serve   # then http://localhost:8080/widget/demo.html
+hosted_demo: https://anonymusk7.github.io/showup-demo/widget/demo.html   # testnet, no install
 needs_key: false
 status: work in progress (NEAR HACKATHON, Nov 2026)
 ```
@@ -17,6 +18,21 @@ Tracks: `realworld` (merchant/event payments with any-chain deposits via NEAR In
 **Problem:** free crypto side events see about 50% no-shows, and deposits fail because guests don't hold the right token on the right chain. ShowUp previews paying from any chain through NEAR Intents 1Click.
 
 Status: work in progress (NEAR HACKATHON, Nov 2026).
+
+## Hosted demo (no install, NEAR testnet)
+- **Widget:** https://anonymusk7.github.io/showup-demo/widget/demo.html
+- **Host dashboard:** https://anonymusk7.github.io/showup-demo/dashboard/
+- **Door check-in:** https://anonymusk7.github.io/showup-demo/dashboard/checkin.html
+
+It's a static GitHub Pages build of `widget/`, `dashboard/` and two browser libs (`node scripts/build-pages.mjs <out> <commit>`), published from the public repo https://github.com/anonymusk7/showup-demo. It stays up through judging (at least 18 Nov 2026).
+- View calls go straight to testnet RPC.
+- 1Click dry quotes are called directly. 1Click answers CORS (`access-control-allow-origin: *`, checked 9 Nov 2026), so the page needs no proxy.
+- Sign in with a testnet wallet (MyNearWallet or Meteor). No relayer runs on Pages, so **Cancel** and door **Check in** are signed by your wallet (about 0.00025 testnet NEAR gas). The gasless NEP-366 path needs `pnpm relayer` locally (see below).
+
+Events shown:
+- **`demo-day.showup-factory-1793597558.testnet`** (default) was created 9 Nov 2026 by `scripts/live-event-testnet.mjs` (tx `dBXYe8Aau67NVe2kuB3Nqw7CcUUVyWQhfa9RqaVrr2Q`). It takes 0.1 NEAR deposits with capacity 25. RSVP/cancel is open until 2026-11-09 16:00 UTC, and door check-in is open from then until 2026-11-30 18:30 UTC. The escrow requires `cancel_deadline <= checkin_start`, so RSVP and check-in never overlap.
+- **`judges-2026.showup-factory-1793597558.testnet`**: RSVP/cancel open until 20 Dec 2026, so you can RSVP and cancel from your own wallet.
+- **`showup-demo-1793595312.testnet`**: settled.
 
 ## NEAR tech used
 - **Rust `near-sdk` 5.5 escrow contract** (`contracts/escrow`): `rsvp` (payable), `cancel`, `add_checker`, `check_in`, `settle`, plus the views `get_info`, `get_guests` and `get_status`. Capacity is capped at 200 (`MAX_CAPACITY`). `cancel` removes the guest from the map, which frees its storage; `get_info.cancelled` counts cancellations. This keeps storage and the `settle` loop bounded, so repeated rsvp+cancel can't drain the state buffer. Escrows deployed earlier still store `Cancelled`.
@@ -124,7 +140,7 @@ Guests and door staff can cancel or check in without holding NEAR for gas. The s
 | Rejected over HTTP, nothing sent | transfer 1 NEAR, AddKey full access, cancel on a non-factory receiver, rsvp with deposit, cancel with 1 yocto, settle, check_in signed by a guest |
 | **Gasless `cancel`** signed by guest A, sent by the relayer | [`4HsvijX9g9U6826KYiPdrWrFBUPnFJx9xE8gKMBPjAsV`](https://testnet.nearblocks.io/txns/4HsvijX9g9U6826KYiPdrWrFBUPnFJx9xE8gKMBPjAsV). Guest A balance 9.98981 → 9.99981 NEAR: **+0.01 NEAR exactly** (the refund, nothing taken for gas). The relayer paid 0.0003 NEAR. |
 | **Gasless `check_in`** of guest B signed by the host | [`5tEUx7X71Nn1ZsrNECh5MyWDEosJJPan2K4XU39cPrpw`](https://testnet.nearblocks.io/txns/5tEUx7X71Nn1ZsrNECh5MyWDEosJJPan2K4XU39cPrpw). Host balance change: **0 yocto**. The relayer paid 0.00025 NEAR. Guest B is now `CheckedIn`. Re-posting the same signed action returned the same hash with no second tx. |
-| **`settle`** after the check-in window closed (called by the host) | [`479KKT9qY2EkVJ1VLnJRye1rF4MfW2F5SDzxx9nv6hfH`](https://testnet.nearblocks.io/txns/479KKT9qY2EkVJ1VLnJRye1rF4MfW2F5SDzxx9nv6hfH). **Payout: 0.01 NEAR → guest B** (`showup-rguest-b-1793775606.testnet`, CheckedIn, its deposit back; there were no no-shows, so no pool to share). Guest A had already been refunded by the gasless cancel. All receipts succeeded. Open `dashboard/?event=gasless-1793775606.showup-factory-1793597558.testnet` to see "Final payouts (settled)". |
+| **`settle`** after the check-in window closed (called by guest A: `settle` is permissionless) | [`479KKT9qY2EkVJ1VLnJRye1rF4MfW2F5SDzxx9nv6hfH`](https://testnet.nearblocks.io/txns/479KKT9qY2EkVJ1VLnJRye1rF4MfW2F5SDzxx9nv6hfH). **Payout: 0.01 NEAR → guest B** (`showup-rguest-b-1793775606.testnet`, CheckedIn, its deposit back; there were no no-shows, so no pool to share). Guest A had already been refunded by the gasless cancel. All receipts succeeded. Open `dashboard/?event=gasless-1793775606.showup-factory-1793597558.testnet` to see "Final payouts (settled)". |
 
 Both gasless transactions show `signer_id = showup-relayer-1793775606.testnet` with a single `Delegate` action and no failed receipts (checked with RPC `tx`). An earlier run the same day (`docs/testnet-relayer-2026-11-04-run1.log`, gasless cancel [`8fGcjGBvABQMpnD1TmQCu1GRvFEMajE51JXaRsTM2eCw`](https://testnet.nearblocks.io/txns/8fGcjGBvABQMpnD1TmQCu1GRvFEMajE51JXaRsTM2eCw)) found a bug. The check_in POST arrived twice, the duplicate failed pre-flight, and the script crashed before logging the hash. The duplicate-request handling above fixes this.
 

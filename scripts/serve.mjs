@@ -15,7 +15,7 @@ export function resolvePath(urlPath) {
   if (!abs.startsWith(ROOT + sep) || !ALLOWED.includes(top) || abs.split(sep).some((s) => s.startsWith('.'))) return undefined;
   return abs;
 }
-// Same-origin proxy for 1Click dry quotes (1Click sends no CORS headers). Only POST /api/1click/quote is forwarded.
+// Same-origin proxy for 1Click dry quotes (kept for local runs; 1Click now also answers CORS directly). Only POST /api/1click/quote is forwarded.
 export async function proxyQuote(req, res, fetchImpl = fetch) {
   const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'POST, OPTIONS' };
   if (req.method === 'OPTIONS') { res.writeHead(204, cors); return res.end(); }
