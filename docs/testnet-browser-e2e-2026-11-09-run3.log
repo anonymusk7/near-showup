@@ -1,0 +1,28 @@
+# ShowUp browser E2E, NEAR TESTNET, 2026-11-09T13:54:48.246Z; pages http://localhost:8137; event ui-1794232488.showup-factory-1793597558.testnet; relayer showup-relayer-1793775606.testnet; CANCEL_S=240 CHECKIN_S=120
+PASS 1 create_event: ui-1794232488.showup-factory-1793597558.testnet, 0.01 NEAR deposit https://testnet.near.rocks/tx/A2a2gE3zKvcZ1vBwqRJ5iXTA1YNREtC8d5fwnaoQVpSW
+PASS 1 rsvp showup-rguest-a-1793775606: locked 0.01 NEAR https://testnet.near.rocks/tx/8BbyNtE6Ut5vBeScqirfaHifTfCLhq2kFccr3PbmoeDy
+PASS 1 rsvp showup-rguest-b-1793775606: locked 0.01 NEAR https://testnet.near.rocks/tx/CAsBmGqvCiCadc8174AdYLRYWxNGUBP1pwsWjkGcZ6hm
+PASS 1 rsvp showup-guest-1793597596: locked 0.01 NEAR https://testnet.near.rocks/tx/4rWByqfuL9iwP7DGJbYHgZL9biCoBrGiGST7vHF7CZ98
+PASS 0 sign-in key for showup-rguest-a-1793775606: function-call key scoped to the event, 0.25 NEAR allowance https://testnet.near.rocks/tx/6R5JM2CmuSbfVVhTjp23qAWDv3jjHpfYHJxLxamJzx2Q
+PASS 0 sign-in key for showup-rguest-b-1793775606: function-call key scoped to the event, 0.25 NEAR allowance https://testnet.near.rocks/tx/38K6sPdfxotQTesw2XMSn2qh7S6aVX4My2qYbWYC7ncA
+PASS 0 sign-in key for showup-rhost-1793775606: function-call key scoped to the event, 0.25 NEAR allowance https://testnet.near.rocks/tx/76ausLkXADfkQ9yLP6o2VytJnLhJkNL2ky3rxzULiutU
+PASS 2 signed-in widget: "ui-1794232488.showup-factory-1793597558.testnet RSVP open Deposit 0.01 NEAR Capacity 5 Spots left 2 Show up and get your deposit back plus a share of the no-shows' deposits. You can cancel for a full refund until 2026-11"
+PASS 2 door pass offered: QR area shows "Create my signed door pass"
+#   [relayer] sent 7mApVcqUCXBjn5xMnHuFb2mr9zuHioHNV1Qs2d9fkS7o showup-rguest-a-1793775606.testnet ui-1794232488.showup-factory-1793597558.testnet cancel ok 3597 ms
+PASS 3 gasless Cancel click: widget "Cancelled. Your 0.01 NEAR deposit was refunded. View tx (gasless: the relayer paid the gas)" https://testnet.near.rocks/tx/7mApVcqUCXBjn5xMnHuFb2mr9zuHioHNV1Qs2d9fkS7o
+PASS 3 guest A refunded exactly, paid no gas: A balance change 0.01 NEAR https://testnet.near.rocks/tx/7mApVcqUCXBjn5xMnHuFb2mr9zuHioHNV1Qs2d9fkS7o
+PASS 4 RSVP hands the exact tx to MyNearWallet: wallet https://testnet.mynearwallet.com/sign: showup-rguest-a-1793775606.testnet → ui-1794232488.showup-factory-1793597558.testnet rsvp({}) deposit 0.01 NEAR
+PASS 4 no page errors: []
+PASS 5 relayer unreachable: cancel falls back to the wallet path: signed in the browser with the sign-in key (guest pays gas); B balance change 0.0097549598156545 NEAR; widget "ui-1794232488.showup-factory-1793597558.testnet RSVP open Deposit 0.01 NEAR Capacity 5 Spots left 4 Show up and get your deposit back plus a share of the no-sho"
+PASS 5 no page errors: []
+# waiting for check-in to open (2026-11-09T13:58:48.247Z)…
+PASS 6 host signed in on door page: host You can check guests in.
+#   [relayer] sent 5irW62okaDqtv8bw9UQNkKeS5LyYwqZZt9cpoZXkTv2n showup-rhost-1793775606.testnet ui-1794232488.showup-factory-1793597558.testnet check_in ok 3137 ms
+PASS 6 gasless check_in click: guest C CheckedIn; page "showup-guest-1793597596.testnet CheckedIn ✓ View tx (gasless: the relayer paid the gas)" https://testnet.near.rocks/tx/5irW62okaDqtv8bw9UQNkKeS5LyYwqZZt9cpoZXkTv2n
+PASS 6 host paid nothing: host balance change 0 NEAR https://testnet.near.rocks/tx/5irW62okaDqtv8bw9UQNkKeS5LyYwqZZt9cpoZXkTv2n
+PASS 6 no page errors: []
+# waiting for check-in to close (2026-11-09T14:00:48.247Z)…
+PASS 7 settle (anyone): settled https://testnet.near.rocks/tx/P535361bbBY1C9tFt5aNWLmZKz3YkwBj4avD5JioSWw
+PASS 7 CSV download: showup-ui-1794232488.showup-factory-1793597558.testnet-ledger.csv, 1 rows: showup-guest-1793597596.testnet=attended
+PASS 7 CSV: C attended, paid 0.01: ["ui-1794232488.showup-factory-1793597558.testnet","near-testnet","showup-guest-1793597596.testnet","attended","2026-11-09T13:54:58.624Z","0.01","4rWByqfuL9iwP7DGJbYHgZL9biCoBrGiGST7vHF7CZ98","","",""
+SUMMARY pass 22 fail 0

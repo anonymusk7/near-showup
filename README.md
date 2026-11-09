@@ -238,4 +238,5 @@ MIT (see `LICENSE`).
   - the host's gasless **Check in** on the door page ([`dPJsVpux…`](https://testnet.nearblocks.io/txns/dPJsVpuxbxpvhevGhyHtdwQCUNY1K9WMKfKYVJVWuwo)) costs the host 0 yocto;
   - after `settle`, the dashboard's **Export CSV** downloads `showup-<event>-ledger.csv` with the attendee paid 0.01 NEAR;
   - no page errors.
+- **Run 3** (`docs/testnet-browser-e2e-2026-11-09-run3.log`, event `ui-1794232488.showup-factory-1793597558.testnet`, rerun 9 Nov 19:24 IST on the final code): **22 pass, 0 fail** (gasless cancel [`7mApVcqU…`](https://testnet.near.rocks/tx/7mApVcqUCXBjn5xMnHuFb2mr9zuHioHNV1Qs2d9fkS7o), settle [`P535361b…`](https://testnet.near.rocks/tx/P535361bbBY1C9tFt5aNWLmZKz3YkwBj4avD5JioSWw)).
 - Cancelled guests have no CSV row, because `cancel` frees their entry on-chain and testnet nearblocks returns no tx history for these accounts.
