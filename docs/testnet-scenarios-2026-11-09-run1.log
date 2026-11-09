@@ -1,0 +1,79 @@
+# ShowUp scenario run, NEAR TESTNET, 2026-11-09T05:18:24.646Z; factory showup-factory-1793597558.testnet; RPC https://rpc.testnet.fastnear.com; CANCEL_S=240 CHECKIN_S=180
+# host showup-rhost-1793775606.testnet  A showup-rguest-a-1793775606.testnet  B showup-rguest-b-1793775606.testnet  C showup-guest-1793597596.testnet  outsider showup-rguest-a-1793775045.testnet  relayer showup-relayer-1793775606.testnet
+# balances: showup-rhost-1793775606=7.591 showup-rguest-a-1793775606=9.9998 showup-rguest-b-1793775606=9.9998 showup-guest-1793597596=9.8993 showup-rguest-a-1793775045=9.9998 showup-relayer-1793775606=9.9994
+PASS 1 factory rejects capacity 201: failed as expected (want "capacity must be at most 200"): [{"ActionError":{"index":0,"kind":{"FunctionCallError":{"ExecutionError":"Smart contract panicked: capacity must be at most 200"}}}}] https://testnet.nearblocks.io/txns/A7TymmtZy1dK387CkYtMD1EdAvPrMrsyyMVhLVygwwHB
+PASS 1 host keeps the 2.4 NEAR: host balance change -0.0001813584031446 NEAR (gas only; tokens burnt 0.0001813584031446 NEAR) https://testnet.nearblocks.io/txns/A7TymmtZy1dK387CkYtMD1EdAvPrMrsyyMVhLVygwwHB
+PASS 2 create event: scen-1794201504.showup-factory-1793597558.testnet capacity 3, deposit 0.01 NEAR, attached 2.3701 NEAR; cancel until 2026-11-09T05:22:33.728Z, check-in until 2026-11-09T05:25:33.728Z https://testnet.nearblocks.io/txns/BPUthh6aTjwJCyKdXH4a6CDfcuyfCtjjXQx2vR3hcUDy
+PASS 2 get_info: capacity 3 cancelled 0 active 0 host showup-rhost-1793775606.testnet; factory record scen-1794201504.showup-factory-1793597558.testnet https://testnet.nearblocks.io/address/scen-1794201504.showup-factory-1793597558.testnet
+PASS 3 rsvp A: showup-rguest-a-1793775606.testnet locked exactly 0.01 NEAR https://testnet.nearblocks.io/txns/DnnWJCTqpEopCU7RGMSZyrq8439V8Cb7DezLVCuhPmYS
+PASS 3 rsvp B: showup-rguest-b-1793775606.testnet locked exactly 0.01 NEAR https://testnet.nearblocks.io/txns/5xGv9dLM2notfD1XeSCTxHif9vMxi94rn5XM3ZmDBFBQ
+PASS 3 rsvp C: showup-guest-1793597596.testnet locked exactly 0.01 NEAR https://testnet.nearblocks.io/txns/D9eVNmqh8vu1ZdAFCp1NsRMAmxCo5dEYSvrkC2PvFuWw
+PASS 3 rsvp deposit-1 yocto: failed as expected (want "attach exactly"): [{"ActionError":{"index":0,"kind":{"FunctionCallError":{"ExecutionError":"Smart contract panicked: attach exactly the deposit"}}}}] https://testnet.nearblocks.io/txns/4Vj5cu5pgnnzUoAN31ay3YnyZG7jcJ8aeWjFPpxd1sHY
+FAIL 3 double rsvp by A: failed with the WRONG reason (want "already RSVPed"): [{"ActionError":{"index":0,"kind":{"FunctionCallError":{"ExecutionError":"Smart contract panicked: event full"}}}}] https://testnet.nearblocks.io/txns/HGPMQu3E3aWMpuP6hZQFDCMXnTyeHbZLMNdDYYf8VD1g
+PASS 3 rsvp when full (3/3): failed as expected (want "event full"): [{"ActionError":{"index":0,"kind":{"FunctionCallError":{"ExecutionError":"Smart contract panicked: event full"}}}}] https://testnet.nearblocks.io/txns/5CFWXg4fkJrrtnLWrCpdffa32S8T3hqnLTYbtLzkb6xQ
+PASS 3 outsider deposits refunded: outsider net change -0.0003003037721655 NEAR across both failed rsvps (gas only)
+PASS 3 state after rsvps: active 3/3; escrow storage_usage 182749 bytes
+PASS 4 /health: rpc ok, balance 9.9994 NEAR, low_funds false
+#   [relayer] sent dcdEVJqE9xkYDfSd7bp9p89qfGk9DMQjwYcUSiiSPgz showup-guest-1793597596.testnet scen-1794201504.showup-factory-1793597558.testnet cancel ok 3760 ms
+PASS 5 relayer accepts C cancel: HTTP 200 relayer burnt 0.0003143850913931 NEAR https://testnet.nearblocks.io/txns/dcdEVJqE9xkYDfSd7bp9p89qfGk9DMQjwYcUSiiSPgz
+PASS 5 C refunded exactly 0.01 NEAR: C balance change 0.01 NEAR (10000000000000000000000 yocto), C paid no gas https://testnet.nearblocks.io/txns/dcdEVJqE9xkYDfSd7bp9p89qfGk9DMQjwYcUSiiSPgz
+PASS 5 entry freed: get_status(C) null, cancelled 1, active 2, storage_usage 182749 -> 182591 bytes
+PASS 13 broke sub-account: broke-1794201504.showup-relayer-1793775606.testnet funded with 0.00185 NEAR (storage only) https://testnet.nearblocks.io/txns/FTcE8bGqxySCQ7r3chijYm16ju2wT1by8H7Uue4yhtdE
+#   [broke relayer] send error RPC send_tx: {"info":{},"name":"INVALID_TRANSACTION"}
+FAIL 13 503 RELAYER_OUT_OF_FUNDS: HTTP 502 code undefined: RPC send_tx: {"info":{},"name":"INVALID_TRANSACTION"}
+PASS 13 nothing sent for B: get_status(B) still Rsvp
+PASS 13 /health low_funds: balance 0.0018 NEAR, low_funds true
+#   [relayer] replay showup-guest-1793597596.testnet:f18c1a7b2cfdc599adec12a30c5df607295c99328efbb4b0a6e8c655c10b6b92:275855806000005
+PASS 6 replay returns the first result: HTTP 200 replayed true, hash same, C balance change 0 NEAR https://testnet.nearblocks.io/txns/dcdEVJqE9xkYDfSd7bp9p89qfGk9DMQjwYcUSiiSPgz
+#   [relayer] reject showup-guest-1793597596.testnet has no active RSVP
+PASS 7 refuse: C cancels again: HTTP 403 showup-guest-1793597596.testnet has no active RSVP
+#   [relayer] reject public key is not an access key of showup-rguest-a-1793775606.testnet
+PASS 7 refuse: random key (not on-chain): HTTP 403 public key is not an access key of showup-rguest-a-1793775606.testnet
+#   [relayer] reject nonce already used (replay): delegate nonce 276161302000004 <= key nonce 276161302000004
+PASS 7 refuse: used nonce: HTTP 403 nonce already used (replay): delegate nonce 276161302000004 <= key nonce 276161302000004
+#   [relayer] reject delegate action expired (max_block_height passed)
+PASS 7 refuse: expired max_block_height: HTTP 403 delegate action expired (max_block_height passed)
+#   [relayer] reject method settle is not allowed on escrow (allowed: check_in, cancel)
+PASS 7 refuse: method settle: HTTP 403 method settle is not allowed on escrow (allowed: check_in, cancel)
+#   [relayer] reject receiver evil.testnet is not the factory or a <name>.showup-factory-1793597558.testnet escrow
+PASS 7 refuse: receiver evil.testnet: HTTP 403 receiver evil.testnet is not the factory or a <name>.showup-factory-1793597558.testnet escrow
+#   [relayer] reject receiver scen-1794201504.showup-factory-1793597558-x.testnet is not the factory or a <name>.showup-factory-1793597558.testnet escrow
+PASS 7 refuse: receiver lookalike: HTTP 403 receiver scen-1794201504.showup-factory-1793597558-x.testnet is not the factory or a <name>.showup-factory-1793597558.testnet escrow
+#   [relayer] reject receiver showup-demo-1793595312.testnet is not the factory or a <name>.showup-factory-1793597558.testnet escrow
+PASS 7 refuse: receiver non-factory event: HTTP 403 receiver showup-demo-1793595312.testnet is not the factory or a <name>.showup-factory-1793597558.testnet escrow
+#   [relayer] reject nope-1794201504.showup-factory-1793597558.testnet is not an event created by showup-factory-1793597558.testnet
+PASS 7 refuse: escrow name not in factory: HTTP 403 nope-1794201504.showup-factory-1793597558.testnet is not an event created by showup-factory-1793597558.testnet
+#   [relayer] reject method rsvp is not allowed on escrow (allowed: check_in, cancel)
+PASS 7 refuse: rsvp with deposit: HTTP 403 method rsvp is not allowed on escrow (allowed: check_in, cancel)
+#   [relayer] reject action Transfer is not allowed (FunctionCall only)
+PASS 7 refuse: transfer action: HTTP 403 action Transfer is not allowed (FunctionCall only)
+PASS 7 relayer paid nothing: relayer balance change 0 NEAR across the refusals
+PASS 8 direct check_in before window: failed as expected (want "outside check-in window"): [{"ActionError":{"index":0,"kind":{"FunctionCallError":{"ExecutionError":"Smart contract panicked: outside check-in window"}}}}] https://testnet.nearblocks.io/txns/Fj2gMkdqMK1wHhHh7deD99gi7h2D7TpjhR8Lc6ouMFGX
+# waiting for check-in to open (2026-11-09T05:22:36.728Z)…
+#   [relayer] sent 2s6QfV1FqFeDDaJJ9HnUibY9E35KotzZieDDufqEj3AN showup-rhost-1793775606.testnet scen-1794201504.showup-factory-1793597558.testnet check_in ok 3058 ms
+PASS 9 gasless check_in of A by host: HTTP 200 ok https://testnet.nearblocks.io/txns/2s6QfV1FqFeDDaJJ9HnUibY9E35KotzZieDDufqEj3AN
+PASS 9 host paid nothing: get_status(A) CheckedIn; host balance change 0 yocto https://testnet.nearblocks.io/txns/2s6QfV1FqFeDDaJJ9HnUibY9E35KotzZieDDufqEj3AN
+#   [relayer] reject showup-rguest-a-1793775606.testnet has no active RSVP
+PASS 9 gasless double check_in refused: HTTP 403 showup-rguest-a-1793775606.testnet has no active RSVP
+PASS 9 direct double check_in: failed as expected (want "guest has no active RSVP"): [{"ActionError":{"index":0,"kind":{"FunctionCallError":{"ExecutionError":"Smart contract panicked: guest has no active RSVP"}}}}] https://testnet.nearblocks.io/txns/38C33NPSoK3LkfMNcviSbwUyAtcDRZT7h8pa8wH9qPVt
+#   [relayer] reject showup-rguest-b-1793775606.testnet is not the host or a checker
+PASS 9 gasless self check_in by B refused: HTTP 403 showup-rguest-b-1793775606.testnet is not the host or a checker
+PASS 9 direct check_in by outsider: failed as expected (want "not authorized"): [{"ActionError":{"index":0,"kind":{"FunctionCallError":{"ExecutionError":"Smart contract panicked: not authorized to check in"}}}}] https://testnet.nearblocks.io/txns/HFxVYkRSqp3SvfLz42HrRfHuVAwmYHCXY1rG9QRyMhne
+PASS 9 cancel by A after check-in: failed as expected (want "cancellation deadline passed"): [{"ActionError":{"index":0,"kind":{"FunctionCallError":{"ExecutionError":"Smart contract panicked: cancellation deadline passed"}}}}] https://testnet.nearblocks.io/txns/9qhyPRofZoeN8BNJLN3exQHLvL2UNfdnoB4VgfbXHxVh
+PASS 9 cancel by B after deadline: failed as expected (want "deadline passed"): [{"ActionError":{"index":0,"kind":{"FunctionCallError":{"ExecutionError":"Smart contract panicked: cancellation deadline passed"}}}}] https://testnet.nearblocks.io/txns/57KA8kv3zJrChKgyD2Qc9wwgyZHFHJWn3kGTaKbUorys
+PASS 9 settle before end: failed as expected (want "event not over"): [{"ActionError":{"index":0,"kind":{"FunctionCallError":{"ExecutionError":"Smart contract panicked: event not over"}}}}] https://testnet.nearblocks.io/txns/CDbF3oqsZB2k2G9cM9nZUHm1qfsGXiLZUKMe72qLfgva
+# waiting for check-in to close (2026-11-09T05:25:36.728Z)…
+PASS 10 direct check_in of B after window: failed as expected (want "outside check-in window"): [{"ActionError":{"index":0,"kind":{"FunctionCallError":{"ExecutionError":"Smart contract panicked: outside check-in window"}}}}] https://testnet.nearblocks.io/txns/F4AtH8QdpVtk9betc8RVuV4YGRZX1DCfQjFxqfGaXzP8
+PASS 11 settle by outsider: anyone may settle once check-in is over https://testnet.nearblocks.io/txns/3itR3Gfwojf7xQPTEt1ZRvFveeQHTAsy7gauxh1rwqQ3
+PASS 11 A paid exactly 0.02 NEAR: A balance change 0.02 NEAR (20000000000000000000000 yocto): own deposit + B's forfeited deposit, no dust https://testnet.nearblocks.io/txns/3itR3Gfwojf7xQPTEt1ZRvFveeQHTAsy7gauxh1rwqQ3
+PASS 11 re-settle: failed as expected (want "already settled"): [{"ActionError":{"index":0,"kind":{"FunctionCallError":{"ExecutionError":"Smart contract panicked: already settled"}}}}] https://testnet.nearblocks.io/txns/Hb7n1daXmpabb9FrjBvWY7U9THhx7uoNusmprJFyxRwn
+PASS 12 csv header: event,network,guest_account,status,rsvp_time_utc,deposit_near,deposit_tx,refund_near,refund_time_utc,refund_tx,payout_near,payout_time_utc,payout_tx,explorer_url
+PASS 12 csv CRLF: 3 CRLF-terminated lines
+PASS 12 A attended 0.02: A attended payout 0.02
+PASS 12 B forfeited: B no_show_forfeited payout 0
+PASS 12 no row for C: rows: showup-rguest-a-1793775606.testnet=attended, showup-rguest-b-1793775606.testnet=no_show_forfeited (C's entry was freed at cancel)
+PASS 12 conservation: held 0.02 NEAR paid 0.02 NEAR dust 0; written docs/testnet-scenarios-2026-11-09.csv https://testnet.nearblocks.io/txns/3itR3Gfwojf7xQPTEt1ZRvFveeQHTAsy7gauxh1rwqQ3
+PASS 14 /health rpc unreachable: rpc unreachable, balance null
+PASS 14 relay 503 retryable: HTTP 503 retryable true: NEAR testnet RPC is unreachable right now; nothing was sent. Try again in a minute.
+# event scen-1794201504.showup-factory-1793597558.testnet; log docs/testnet-scenarios-2026-11-09.log
+SUMMARY pass 53 fail 2

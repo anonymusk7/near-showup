@@ -1,0 +1,3 @@
+event,network,guest_account,status,rsvp_time_utc,deposit_near,deposit_tx,refund_near,refund_time_utc,refund_tx,payout_near,payout_time_utc,payout_tx,explorer_url
+scen-1794201504.showup-factory-1793597558.testnet,near-testnet,showup-rguest-a-1793775606.testnet,attended,,0.01,,,,,0.02,,,https://testnet.nearblocks.io/address/showup-rguest-a-1793775606.testnet
+scen-1794201504.showup-factory-1793597558.testnet,near-testnet,showup-rguest-b-1793775606.testnet,no_show_forfeited,,0.01,,,,,0,,,https://testnet.nearblocks.io/address/showup-rguest-b-1793775606.testnet

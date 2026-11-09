@@ -32,8 +32,8 @@ Status: work in progress (NEAR HACKATHON, Nov 2026).
 ## Layout
 | Path | What |
 |---|---|
-| `contracts/escrow` | per-event escrow (11 Rust tests, including a 10k-case conservation property) |
-| `contracts/factory` | factory with the embedded escrow wasm (10 Rust tests: receipt batch shape, init args, callback success/refund, pagination, validation) |
+| `contracts/escrow` | per-event escrow (28 Rust tests, including a 10k-case conservation property and abuse cases) |
+| `contracts/factory` | factory with the embedded escrow wasm (12 Rust tests: receipt batch shape, init args, callback success/refund, pagination, validation, capacity cap) |
 | `widget/widget.js` + `widget/core.mjs` | `<script src=".../widget/widget.js" data-event="acct.testnet">`, rendered in a shadow DOM with no build step |
 | `dashboard/index.html` + `dashboard/logic.mjs` | host dashboard: guests, statuses, projected or final payout table, conservation check |
 | `scripts/serve.mjs` | dependency-free static server (no npx); serves only `widget/`, `dashboard/` and `lib/` |
@@ -53,11 +53,13 @@ pnpm demo:sim        # simulated event payout table
 pnpm quote:dry       # live 1Click dry quote (no funds moved)
 RELAYER_ACCOUNT=<you>.testnet pnpm relayer   # gasless relayer on :3030 (key from ~/.near-credentials/testnet)
 pnpm relayer:demo    # live TESTNET run: faucet accounts, event, RSVPs, gasless cancel + check_in (moves testnet NEAR only)
+pnpm scenarios:testnet  # live TESTNET abuse run on existing keychain accounts: 55 PASS/FAIL checks (moves testnet NEAR only)
+pnpm ui:mobile       # headless Chrome at 360/390/414 px vs a running `pnpm serve` (needs playwright-core outside the repo)
 ```
 The factory `include_bytes!` the escrow at `target/wasm32-unknown-unknown/release/showup_escrow.wasm`, so the escrow must be built first. `pnpm test` and `pnpm build:contract` handle that.
 
 ## Judge steps (do X, see Y)
-1. Run `pnpm test`. You should see `test result: ok. 27 passed` (escrow) and `test result: ok. 12 passed` (factory), plus two empty doc-test results, then `pass 63` / `fail 0` for the JS tests (settle, 1Click, widget, wallet/RSVP states, QR check-in, RPC fallback, dashboard, CSV export, static server, NEP-366 codec and relayer policy). These run offline from recorded RPC/1Click fixtures in `test/fixtures/`.
+1. Run `pnpm test`. You should see `test result: ok. 28 passed` (escrow) and `test result: ok. 12 passed` (factory), plus two empty doc-test results, then `pass 66` / `fail 0` for the JS tests (settle, 1Click, widget, wallet/RSVP states, QR check-in, RPC fallback, dashboard, CSV export, static server, NEP-366 codec and relayer policy). These run offline from recorded RPC/1Click fixtures in `test/fixtures/`.
 2. Run `pnpm serve` and open http://localhost:8080/widget/demo.html. If port 8080 is taken, run `pnpm serve 8081` and use that port in steps 2 and 3. The widget and dashboard read testnet through `rpc.testnet.near.org` and fall back to `rpc.testnet.fastnear.com` automatically if it answers -429 or fails (`data-rpc=` / `?rpc=` pin one RPC). You should see two widget cards read live from testnet:
    - **ethdenver-side.showup-factory-1793597558.testnet**: "RSVP open", deposit 0.1 NEAR, capacity 25, spots left 24, and a live 1Click line such as "Pay 0.43 USDC (≈ $0.43) → 0.1 NEAR in ~37s". Changing the select (USDC Arbitrum/Solana, ETH Base, SOL) re-quotes. Clicking **Sign in with NEAR wallet to RSVP** opens the NEAR wallet selector (MyNearWallet or Meteor, testnet). After you sign in, the button becomes **RSVP: lock 0.1 NEAR**, which asks your wallet to sign exactly `rsvp` with the deposit attached. Once you have RSVPed you get **Cancel RSVP (refund 0.1 NEAR)** and your **check-in QR code**. "Prefer a terminal?" still shows the exact `near` CLI command.
    - **showup-demo-1793595312.testnet**: "Settled", with the button disabled.
@@ -179,3 +181,24 @@ MIT (see `LICENSE`).
   - The door verifies the pass; the contract's `check_in` is still host/checker-authorized.
   - The seen-set is per door device.
 - Demo script: `docs/DEMO-SCRIPT.md`.
+
+## Scenario testing (2026-11-09)
+`pnpm scenarios:testnet` (`scripts/scenarios-testnet.mjs`) runs the abuse cases against live testnet using the existing keychain accounts. It writes one PASS/FAIL line per check to `docs/testnet-scenarios-<date>.log`, plus the ledger CSV.
+- **Factory redeployed** on `showup-factory-1793597558.testnet` with the hardened escrow. State is unchanged and the earlier events are still listed. The txs are `91PZ4341T4WFUMYBVpmQrSWrZ9mkxMYNedSNXFAiWaro` and `8MRTD5reQukgV3MCC897KSmnCyw6H83crE6ussYqeG2p`. Escrows created earlier keep their old code.
+- **Run 1** (`docs/testnet-scenarios-2026-11-09-run1.log`): 53 pass, 2 fail.
+  - A double RSVP on a full event answered "event full" instead of "already RSVPed". The check order is now fixed.
+  - The relayer reported "out of funds" as a raw `INVALID_TRANSACTION`. The RPC keeps the reason in `error.data`, which was being dropped.
+- **Run 2** (`docs/testnet-scenarios-2026-11-09.log`, event `scen-1794201984.showup-factory-1793597558.testnet`): **55 pass, 0 fail**. Checks include:
+  - factory capacity cap;
+  - wrong deposit, double RSVP and RSVP when full;
+  - gasless cancel refunds exactly 0.01 NEAR and frees the storage entry;
+  - a replayed body is not re-sent;
+  - the relayer refuses a random key, a used nonce, an expired action, `settle`/`rsvp`/transfer and foreign or look-alike receivers, and pays 0 yocto for them;
+  - gasless check-in costs the host 0 yocto;
+  - double check-in, check-in by a non-host and check-in outside the window are refused;
+  - cancel after the deadline and settle before the end are refused;
+  - settle by an outsider pays the attendee exactly 0.02 NEAR, and re-settle is refused;
+  - the CSV is correct;
+  - the relayer returns 503 `RELAYER_OUT_OF_FUNDS` when out of funds, and 503 retryable when the RPC is down.
+- **Mobile UI** (`pnpm ui:mobile`): the widget, dashboard and door page have no horizontal overflow at 360, 390 and 414 px when live, with the RPC down, and with 1Click down. The wallet-selector modal opens at 375 px.
+
