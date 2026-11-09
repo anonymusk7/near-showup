@@ -172,7 +172,7 @@ test('mountWidget: RPC down shows the friendly message and a Try again button th
 });
 test('onboarding hint for new users and hidden empty elements', () => {
   const html = c.renderCard('ev.testnet', c.eventSummary(info(), 50n));
-  assert.match(html, /<p class="hint">New to NEAR\? Create a free testnet wallet at <a href="https:\/\/testnet\.mynearwallet\.com\/"[^>]*>MyNearWallet<\/a>/);
+  assert.match(html, /<p class="hint">New to NEAR\? Create a free testnet wallet in <a href="https:\/\/wallet\.meteorwallet\.app\/"[^>]*>Meteor Wallet<\/a>/);
   assert.match(html, /<a href="https:\/\/near-faucet\.io\/"/);
   assert.ok(!c.renderCard('ev.testnet', c.eventSummary(info({ settled: true }), 50n)).includes('class="hint"'), 'no hint once RSVP is closed');
   // .who is display:flex with a grey background; without this the hidden, empty .who rendered as a grey bar
