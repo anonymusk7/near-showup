@@ -1,8 +1,9 @@
 // ShowUp widget core: pure helpers + fetch-injectable RPC/1Click calls. Runs in browsers and Node (tests).
 export const RPC_TESTNET = 'https://rpc.testnet.near.org';
 export const ONECLICK_BASE = 'https://1click.chaindefuser.com/v0';
-// Browsers can't call 1Click directly (no CORS headers), so in a page we go through the dev server's proxy
-// (scripts/serve.mjs, POST /api/1click/quote) on the same origin that served this module.
+// In a page we first try the dev server's same-origin proxy (scripts/serve.mjs, POST /api/1click/quote). 1Click now
+// answers CORS (access-control-allow-origin: *, checked 2026-11-09), so on a static host with no proxy (GitHub Pages)
+// a 404/405 or network error from the proxy falls back to calling 1Click directly.
 export const ONECLICK_PROXY = (() => { try { const u = new URL('/api/1click', import.meta.url); return /^https?:$/.test(u.protocol) ? u.href : null; } catch { return null; } })();
 export const defaultQuoteBase = () => (globalThis.document && ONECLICK_PROXY) || ONECLICK_BASE;
 /** Short, human error for a failed quote. 5xx / 52x / HTML bodies / network errors mean 1Click is down. */
@@ -108,7 +109,12 @@ export function buildQuoteRequest({ originAsset, depositYocto, refundTo, recipie
 /** Dry (no funds, no deposit address) 1Click quote: how much of `origin` buys exactly the deposit in NEAR. */
 export async function quoteDeposit(origin, depositYocto, { base = defaultQuoteBase(), fetchImpl = fetch, now } = {}) {
   const body = buildQuoteRequest({ originAsset: origin.asset, depositYocto, refundTo: origin.refundTo, now });
-  const r = await fetchImpl(`${base}/quote`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const post = (b) => fetchImpl(`${b}/quote`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  let r;
+  if (base !== ONECLICK_BASE && base === ONECLICK_PROXY) {
+    r = await post(base).catch(() => null);
+    if (!r || r.status === 404 || r.status === 405) r = await post(ONECLICK_BASE);
+  } else r = await post(base);
   if (!r.ok) { const t = await r.text(); throw new Error(`1Click quote failed: ${r.status} ${/<html|<!DOCTYPE/i.test(t) ? '(service unavailable)' : t.slice(0, 300)}`); }
   return r.json();
 }

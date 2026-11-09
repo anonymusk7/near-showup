@@ -63,6 +63,6 @@ viewCall(params.get('factory') || FACTORY, 'get_events', {}, { rpc }).then((list
   for (const r of [...list, { account_id: 'showup-demo-1793595312.testnet', name: 'showup-demo (settled, pre-factory)' }])
     pick.add(new Option(`${r.name} (${r.account_id})`, r.account_id));
 }).catch(() => {});
-if (params.get('event')) { ev.value = params.get('event'); load(ev.value); }
+ev.value = params.get('event') || 'demo-day.showup-factory-1793597558.testnet'; load(ev.value);
 </script>
 </body></html>
