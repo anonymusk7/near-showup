@@ -91,7 +91,7 @@ async function lookup(text) {
       const out = await gaslessOrWallet(() => gaslessCall({ relayer: RELAYER, accountId: me, receiverId: EVENT, methodName: 'check_in', args: { guest } }),
         () => wallet.call(EVENT, 'check_in', { guest }));
       const h = out?.hash ?? out?.transaction?.hash;
-      box.innerHTML = `<div class="row"><span class="guest">${e(guest)}</span><span class="pill ok">CheckedIn ✓</span></div>${h ? `<p><a href="${explorerTx(h)}" target="_blank" rel="noreferrer">View tx</a></p>` : ''}`;
+      box.innerHTML = `<div class="row"><span class="guest">${e(guest)}</span><span class="pill ok">CheckedIn ✓</span></div>${h ? `<p><a href="${explorerTx(h)}" target="_blank" rel="noreferrer">View tx</a>${out?.gasless ? ' (gasless: the relayer paid the gas)' : ''}</p>` : ''}`;
       if ($('log').querySelector('small')) $('log').innerHTML = '';
       $('log').insertAdjacentHTML('afterbegin', `<li>${new Date().toLocaleTimeString()} · ${e(guest)}${h ? ` · <a href="${explorerTx(h)}" target="_blank" rel="noreferrer">tx</a>` : ''}</li>`);
     } catch (x) { box.insertAdjacentHTML('beforeend', `<p class="err">${e(x.message || x)}</p>`); $('go').disabled = false; $('go').textContent = `Check in ${guest}`; }

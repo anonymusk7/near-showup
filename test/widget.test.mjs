@@ -214,3 +214,13 @@ test('1Click 400 "amount too low" becomes a short NEAR minimum, not raw JSON', a
   assert.equal(c.friendlyQuoteError(new Error('1Click quote failed: 400 {"message":"tokenIn is not valid","correlationId":"x"}')), '1Click: tokenIn is not valid');
   assert.match(c.CSS, /\.quote\{[^}]*overflow-wrap:anywhere/);
 });
+test('explorerTx links go to NEAR Rocks; after an rsvp/cancel the widget re-reads get_info for spots left and the bar', () => {
+  assert.equal(c.explorerTx('H'), 'https://testnet.near.rocks/txns/H');
+  const src = readFileSync(new URL('../widget/core.mjs', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function refreshInfo()'), src.indexOf('const say ='));
+  assert.match(fn, /viewCall\(eventId, 'get_info'/); assert.match(fn, /Object\.assign\(s, eventSummary\(fresh,/);
+  assert.match(fn, /\[data-k="spots"\]/); assert.match(fn, /bar\.title = /); assert.match(fn, /style\.width = /);
+  const click = src.slice(src.indexOf("btn.addEventListener('click'"));
+  assert.ok(click.indexOf('await refreshInfo()') > 0 && click.indexOf('await refreshInfo()') < click.indexOf('await render(w.accountId())'), 'refreshInfo runs before render');
+  assert.match(click, /if \(did === 'cancel' && !note\.textContent\) say\(`Cancelled\./);
+});

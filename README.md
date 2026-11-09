@@ -136,8 +136,10 @@ On the dashboard, **Export CSV** downloads `showup-<event>-ledger.csv` (RFC 4180
 - Amounts are decimal NEAR (e.g. `0.01`), and times are ISO 8601 UTC.
 - `status` is one of `attended`, `no_show_forfeited`, `rsvp_not_checked_in`, `cancelled_refunded`, `host_rounding_dust` or `host_no_attendees_pool`.
 - `payout_*` is only filled once the event is settled.
-- Tx hashes and times come from `https://api-testnet.nearblocks.io/v1/account/<escrow>/txns`. When they aren't available, those cells stay blank.
-- On 2026-11-04 that API returned `{"txns":[]}` for every ShowUp account, so a live export currently has amounts and statuses but blank hash and time columns.
+- Tx hashes and times come from the NearBlocks API v3 receipts endpoint, `https://api-testnet.nearblocks.io/v3/accounts/<escrow>/receipts?limit=25` (paged with `meta.next_page`, at most 8 pages). The old v1 `/account/<escrow>/txns` API now returns 410.
+- The export reads receipts rather than txns because a gasless (NEP-366) cancel or check-in is a transaction signed by the relayer and sent to the guest or host. It doesn't show up under the escrow's txns, but its `cancel` / `check_in` receipt does.
+- When the indexer is unreachable, the hash and time cells stay blank.
+- `explorer_url` is a NEAR Rocks tx link (`https://testnet.near.rocks/txns/<hash>`) for the payout tx if there is one, otherwise the refund tx, otherwise the deposit tx. It's blank when a row has no tx hash. NEAR Rocks is used because the `testnet.nearblocks.io` UI sits behind a Cloudflare challenge.
 
 The logic is a pure function (`ledgerRows` / `ledgerCsv` / `csvCell` in `dashboard/logic.mjs`) and is tested against the settled demo event.
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test'; import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { projectPayouts, tally, fmtRow, csvCell, toCsv, ledgerRows, ledgerCsv, CSV_COLUMNS, fetchEscrowTxns } from '../dashboard/logic.mjs';
+import { projectPayouts, tally, fmtRow, csvCell, toCsv, ledgerRows, ledgerCsv, CSV_COLUMNS, fetchEscrowTxns, indexTxns, explorerTxUrl, explorerAccountUrl, NEARBLOCKS_API, INDEXER_API } from '../dashboard/logic.mjs';
 import { parseViewResponse } from '../widget/core.mjs';
 import { resolvePath } from '../scripts/serve.mjs';
 const fx = (n) => parseViewResponse(JSON.parse(readFileSync(new URL(`./fixtures/${n}`, import.meta.url))));
@@ -69,7 +69,7 @@ test('1Click proxy forwards dry quotes and maps outages to a JSON 502', async ()
   assert.equal((await run({ dry: false }, async () => assert.fail('must not forward'))).status, 400);
 });
 
-// nearblocks v1 /account/<id>/txns row shape. Hashes are the real ones from docs/testnet-e2e-2026-11-02.log; times are illustrative.
+// Normalized escrow receipt shape (what fetchEscrowTxns returns from NearBlocks v3 /accounts/<id>/receipts). Hashes are the real ones from docs/testnet-e2e-2026-11-02.log; times are illustrative.
 const nb = (hash, from, method, ns, ok = true) => ({ transaction_hash: hash, predecessor_account_id: from, receiver_account_id: 'showup-demo-1793595312.testnet',
   block_timestamp: ns, actions: [{ action: 'FUNCTION_CALL', method }], outcomes: { status: ok } });
 const DEMO_TXNS = [
@@ -91,8 +91,8 @@ test('ledger CSV for the settled demo event: one row per guest with deposit/payo
   const lines = csv.split('\r\n');
   assert.equal(lines[0], CSV_COLUMNS.join(',')); assert.equal(lines[0], 'event,network,guest_account,status,rsvp_time_utc,deposit_near,deposit_tx,refund_near,refund_time_utc,refund_tx,payout_near,payout_time_utc,payout_tx,explorer_url');
   assert.equal(lines.length, 4); assert.equal(lines.at(-1), '');
-  assert.equal(lines[1], 'showup-demo-1793595312.testnet,near-testnet,guest1-1793595336.testnet,attended,2026-11-02T04:56:40.000Z,0.1,7ij9J5qUDfXd4iprguGNPmyMbe6KrWvuKwytjVsnR5gr,,,,0.2,2026-11-02T05:00:00.000Z,5d5HTC8v9vAzPSuhed5MJZsGUypyr5GL6Rr4GkWmyBkT,https://testnet.nearblocks.io/txns/7ij9J5qUDfXd4iprguGNPmyMbe6KrWvuKwytjVsnR5gr');
-  assert.equal(lines[2], 'showup-demo-1793595312.testnet,near-testnet,guest2-1793595336.testnet,no_show_forfeited,2026-11-02T04:56:50.000Z,0.1,BoosPz7CHKaQppN1RgfBH5i82KrSfEtR3RGabsn7SaHe,,,,0,,,https://testnet.nearblocks.io/txns/BoosPz7CHKaQppN1RgfBH5i82KrSfEtR3RGabsn7SaHe');
+  assert.equal(lines[1], 'showup-demo-1793595312.testnet,near-testnet,guest1-1793595336.testnet,attended,2026-11-02T04:56:40.000Z,0.1,7ij9J5qUDfXd4iprguGNPmyMbe6KrWvuKwytjVsnR5gr,,,,0.2,2026-11-02T05:00:00.000Z,5d5HTC8v9vAzPSuhed5MJZsGUypyr5GL6Rr4GkWmyBkT,https://testnet.near.rocks/txns/5d5HTC8v9vAzPSuhed5MJZsGUypyr5GL6Rr4GkWmyBkT');
+  assert.equal(lines[2], 'showup-demo-1793595312.testnet,near-testnet,guest2-1793595336.testnet,no_show_forfeited,2026-11-02T04:56:50.000Z,0.1,BoosPz7CHKaQppN1RgfBH5i82KrSfEtR3RGabsn7SaHe,,,,0,,,https://testnet.near.rocks/txns/BoosPz7CHKaQppN1RgfBH5i82KrSfEtR3RGabsn7SaHe');
 });
 test('ledger rows: cancel refunds, unsettled payouts blank, host dust row, missing txs blank', () => {
   const info = { host: 'host.testnet', deposit: (10n ** 24n).toString(), settled: false };
@@ -100,22 +100,43 @@ test('ledger rows: cancel refunds, unsettled payouts blank, host dust row, missi
   const txns = [{ transaction_hash: 'CANCELc', predecessor_account_id: 'c.testnet', receiver_account_id: 'ev.testnet', block_timestamp: '1793600000000000000', actions: [{ action: 'FUNCTION_CALL', method: 'cancel' }], outcomes: { status: true } }];
   const rows = ledgerRows('ev.testnet', info, g, txns);
   const c = rows.find((r) => r.guest_account === 'c.testnet');
-  assert.deepEqual([c.status, c.refund_near, c.refund_tx, c.refund_time_utc, c.deposit_tx, c.explorer_url], ['cancelled_refunded', '1', 'CANCELc', '2026-11-02T06:13:20.000Z', '', 'https://testnet.nearblocks.io/address/c.testnet']);
+  assert.deepEqual([c.status, c.refund_near, c.refund_tx, c.refund_time_utc, c.deposit_tx, c.explorer_url], ['cancelled_refunded', '1', 'CANCELc', '2026-11-02T06:13:20.000Z', '', 'https://testnet.near.rocks/txns/CANCELc']);
+  assert.ok(rows.filter((r) => r.guest_account !== 'c.testnet').every((r) => r.explorer_url === ''), 'no tx hash: explorer_url stays blank, never an address link');
   assert.ok(rows.every((r) => r.payout_near === '' && r.payout_tx === ''));
   assert.equal(rows.find((r) => r.guest_account === 'b.testnet').status, 'rsvp_not_checked_in');
   const settled = ledgerRows('ev.testnet', { ...info, settled: true }, [['a', 'CheckedIn'], ['b', 'CheckedIn'], ['c', 'CheckedIn'], ['d', 'Rsvp']], []);
   assert.deepEqual(settled.at(-1), { event: 'ev.testnet', network: 'near-testnet', guest_account: 'host.testnet', status: 'host_rounding_dust', rsvp_time_utc: '', deposit_near: '',
-    deposit_tx: '', refund_near: '', refund_time_utc: '', refund_tx: '', payout_near: '0.000000000000000000000001', payout_time_utc: '', payout_tx: '', explorer_url: 'https://testnet.nearblocks.io/address/host.testnet' });
+    deposit_tx: '', refund_near: '', refund_time_utc: '', refund_tx: '', payout_near: '0.000000000000000000000001', payout_time_utc: '', payout_tx: '', explorer_url: '' });
   assert.equal(settled[0].payout_near, '1.333333333333333333333333');
 });
-test('fetchEscrowTxns pages through nearblocks and degrades to [] on errors', async () => {
+test('explorer helpers point at NEAR Rocks; indexTxns accepts v3 signer_account_id', () => {
+  assert.equal(NEARBLOCKS_API, 'https://api-testnet.nearblocks.io/v3'); assert.equal(INDEXER_API, NEARBLOCKS_API);
+  assert.equal(explorerTxUrl('H'), 'https://testnet.near.rocks/txns/H'); assert.equal(explorerAccountUrl('a.testnet'), 'https://testnet.near.rocks/accounts/a.testnet');
+  const idx = indexTxns('ev.testnet', [{ transaction_hash: 'R', signer_account_id: 'g.testnet', receiver_account_id: 'ev.testnet', block_timestamp: '1', actions: [{ action: 'FUNCTION_CALL', method: 'rsvp' }] }]);
+  assert.equal(idx.byGuest['g.testnet'].rsvp.hash, 'R');
+});
+test('fetchEscrowTxns reads v3 receipts with the meta.next_page cursor, keeps escrow receipts, degrades to [] on errors', async () => {
   const urls = [];
-  const page = (n) => Array.from({ length: n }, (_, i) => ({ transaction_hash: `h${i}` }));
-  const f = async (u) => { urls.push(u); return { ok: true, json: async () => ({ txns: urls.length === 1 ? page(25) : page(3) }) }; };
-  assert.equal((await fetchEscrowTxns('ev.testnet', { fetchImpl: f })).length, 28);
-  assert.equal(urls[0], 'https://api-testnet.nearblocks.io/v1/account/ev.testnet/txns?page=1&per_page=25&order=asc');
+  const rc = (i, o = {}) => ({ transaction_hash: `h${i}`, predecessor_account_id: `g${i}.testnet`, receiver_account_id: 'ev.testnet', included_in_block_timestamp: `${1000 + i}`,
+    block: { block_timestamp: `${1000 + i}` }, actions: [{ action: 'FUNCTION_CALL', method: 'cancel' }], outcome: { status: true }, ...o });
+  const pages = [
+    { data: [rc(0), rc(1, { receiver_account_id: 'g1.testnet', actions: [{ action: 'TRANSFER', method: null }] })], meta: { next_page: 'C1==' } },
+    { data: [rc(2, { included_in_block_timestamp: undefined, outcome: { status: false } }), rc(0)], meta: { next_page: 'C2' } },
+    { data: [rc(3)], meta: {} },
+  ];
+  const f = async (u) => { urls.push(u); return { ok: true, json: async () => pages[urls.length - 1] }; };
+  const got = await fetchEscrowTxns('ev.testnet', { fetchImpl: f });
+  assert.deepEqual(urls, ['https://api-testnet.nearblocks.io/v3/accounts/ev.testnet/receipts?limit=25',
+    'https://api-testnet.nearblocks.io/v3/accounts/ev.testnet/receipts?limit=25&next=C1%3D%3D',
+    'https://api-testnet.nearblocks.io/v3/accounts/ev.testnet/receipts?limit=25&next=C2']);
+  assert.deepEqual(got.map((t) => t.transaction_hash), ['h0', 'h2', 'h3'], 'non-escrow receipts dropped, duplicates removed');
+  assert.deepEqual(got[0], { transaction_hash: 'h0', predecessor_account_id: 'g0.testnet', receiver_account_id: 'ev.testnet', block_timestamp: '1000',
+    actions: [{ action: 'FUNCTION_CALL', method: 'cancel' }], outcomes: { status: true } });
+  assert.equal(got[1].block_timestamp, '1002'); assert.equal(got[1].outcomes.status, false);
+  const endless = async () => ({ ok: true, json: async () => ({ data: [rc(Math.random())], meta: { next_page: 'more' } }) });
+  let n = 0; await fetchEscrowTxns('ev.testnet', { fetchImpl: async (...a) => { n++; return endless(...a); } }); assert.equal(n, 8, 'at most 8 pages');
   assert.deepEqual(await fetchEscrowTxns('ev.testnet', { fetchImpl: async () => { throw new Error('offline'); } }), []);
-  assert.deepEqual(await fetchEscrowTxns('ev.testnet', { fetchImpl: async () => ({ ok: false, status: 429 }) }), []);
+  assert.deepEqual(await fetchEscrowTxns('ev.testnet', { fetchImpl: async () => ({ ok: false, status: 410 }) }), []);
 });
 test('dashboard has an Export CSV button wired to ledgerCsv', () => {
   const h = readFileSync(new URL('../dashboard/index.html', import.meta.url), 'utf8');
@@ -159,4 +180,5 @@ test('checkin.html: bad event and RPC outage show a friendly message + Retry ins
   assert.match(h, /<div class="card" id="fatal" hidden><\/div>/); assert.match(h, /id="retry" type="button">Retry/);
   assert.ok(!/get_status', \{ account_id: guest \}\)\.catch\(\(\) => null\)/.test(h), 'RPC errors must not read as "no RSVP"');
   assert.match(h, /gaslessOrWallet\(/);
+  assert.ok(h.includes('gasless: the relayer paid the gas'), 'gasless check-in says the relayer paid the gas');
 });

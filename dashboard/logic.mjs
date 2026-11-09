@@ -25,9 +25,11 @@ export function projectPayouts(info, guests) {
 export const fmtRow = (r) => ({ ...r, payoutNear: formatNear(r.payout, 6) });
 
 // ---- accountant CSV export ----
-export const NEARBLOCKS_API = 'https://api-testnet.nearblocks.io/v1';
-export const explorerTxUrl = (h) => `https://testnet.nearblocks.io/txns/${h}`;
-export const explorerAccountUrl = (a) => `https://testnet.nearblocks.io/address/${a}`;
+// NearBlocks API v3 (v1 now answers 410). Explorer links go to NEAR Rocks: the testnet.nearblocks.io UI is behind a Cloudflare challenge.
+export const NEARBLOCKS_API = 'https://api-testnet.nearblocks.io/v3';
+export const INDEXER_API = NEARBLOCKS_API;
+export const explorerTxUrl = (h) => `https://testnet.near.rocks/txns/${h}`;
+export const explorerAccountUrl = (a) => `https://testnet.near.rocks/accounts/${a}`;
 export const CSV_COLUMNS = ['event', 'network', 'guest_account', 'status', 'rsvp_time_utc', 'deposit_near', 'deposit_tx',
   'refund_near', 'refund_time_utc', 'refund_tx', 'payout_near', 'payout_time_utc', 'payout_tx', 'explorer_url'];
 
@@ -44,13 +46,14 @@ const nsToIso = (ns) => (ns == null || ns === '' ? '' : new Date(Number(BigInt(S
 const methodsOf = (t) => (t.actions || []).filter((a) => /FUNCTION_CALL/i.test(a.action || '')).map((a) => a.method);
 const succeeded = (t) => t.outcomes?.status !== false;
 
-/** Index nearblocks /account/<escrow>/txns rows: latest successful rsvp/cancel per guest, and the settle tx. */
+/** Index escrow receipts (see fetchEscrowTxns): latest successful rsvp/cancel per guest, and the settle tx.
+ * Also takes v3 txn rows, which carry signer_account_id instead of predecessor_account_id. */
 export function indexTxns(escrow, txns = []) {
   const byGuest = {}, sorted = [...txns].filter(succeeded).filter((t) => t.receiver_account_id === escrow)
     .sort((a, b) => (BigInt(String(a.block_timestamp).split('.')[0]) < BigInt(String(b.block_timestamp).split('.')[0]) ? -1 : 1));
   let settle = null;
   for (const t of sorted) {
-    const g = t.predecessor_account_id, ms = methodsOf(t);
+    const g = t.predecessor_account_id ?? t.signer_account_id, ms = methodsOf(t);
     const rec = { hash: t.transaction_hash, ns: t.block_timestamp };
     if (ms.includes('rsvp')) (byGuest[g] ??= {}).rsvp = rec;
     if (ms.includes('cancel')) (byGuest[g] ??= {}).cancel = rec;
@@ -74,23 +77,39 @@ export function ledgerRows(eventId, info, guests, txns = []) {
       rsvp_time_utc: isHost ? '' : nsToIso(t.rsvp?.ns), deposit_near: isHost ? '' : near(dep), deposit_tx: t.rsvp?.hash || '',
       refund_near: r.status === 'Cancelled' ? near(dep) : '', refund_time_utc: r.status === 'Cancelled' ? nsToIso(t.cancel?.ns) : '', refund_tx: r.status === 'Cancelled' ? t.cancel?.hash || '' : '',
       payout_near: info.settled ? near(r.payout) : '', payout_time_utc: paid ? nsToIso(idx.settle?.ns) : '', payout_tx: paid ? idx.settle?.hash || '' : '' };
-    row.explorer_url = row.deposit_tx ? explorerTxUrl(row.deposit_tx) : explorerAccountUrl(r.account);
+    const best = row.payout_tx || row.refund_tx || row.deposit_tx;
+    row.explorer_url = best ? explorerTxUrl(best) : '';
     return row;
   });
 }
 export const ledgerCsv = (eventId, info, guests, txns) => toCsv(CSV_COLUMNS, ledgerRows(eventId, info, guests, txns));
 
-/** All txns touching the escrow from the nearblocks testnet API (paged). Returns [] on any failure: tx columns then stay blank. */
-export async function fetchEscrowTxns(escrow, { fetchImpl = fetch, base = NEARBLOCKS_API, perPage = 25, maxPages = 8 } = {}) {
-  const all = [];
+/**
+ * Function-call receipts executed by the escrow, from NearBlocks API v3 /accounts/<escrow>/receipts (cursor paged via meta.next_page).
+ * Receipts rather than /txns: a gasless NEP-366 cancel / check_in is a tx signed by the relayer to the guest / host, so it is
+ * not listed under the escrow's txns, but its inner receipt (predecessor = guest / host) is. Each receipt is normalized to the
+ * row shape indexTxns reads. Returns [] on any failure: tx columns then stay blank.
+ */
+export async function fetchEscrowTxns(escrow, { fetchImpl = fetch, base = NEARBLOCKS_API, limit = 25, maxPages = 8 } = {}) {
+  const all = [], seen = new Set();
   try {
+    let next = null;
     for (let page = 1; page <= maxPages; page++) {
-      const r = await fetchImpl(`${base}/account/${encodeURIComponent(escrow)}/txns?page=${page}&per_page=${perPage}&order=asc`, { headers: { accept: 'application/json' } });
-      if (!r.ok) break;
-      const j = await r.json(), txns = Array.isArray(j?.txns) ? j.txns : [];
-      all.push(...txns);
-      if (txns.length < perPage) break;
+      const url = `${base}/accounts/${encodeURIComponent(escrow)}/receipts?limit=${limit}${next ? `&next=${encodeURIComponent(next)}` : ''}`;
+      const r = await fetchImpl(url, { headers: { accept: 'application/json' } });
+      if (!r.ok) return [];
+      const j = await r.json(), data = Array.isArray(j?.data) ? j.data : [];
+      for (const x of data) {
+        if (x?.receiver_account_id !== escrow) continue;
+        const key = `${x.transaction_hash}:${(x.actions || []).map((a) => a.method).join(',')}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        all.push({ transaction_hash: x.transaction_hash, predecessor_account_id: x.predecessor_account_id, receiver_account_id: x.receiver_account_id,
+          block_timestamp: x.included_in_block_timestamp || x.block?.block_timestamp, actions: x.actions || [], outcomes: { status: x.outcome?.status } });
+      }
+      next = j?.meta?.next_page;
+      if (!next || !data.length) break;
     }
-  } catch { /* offline / CORS / rate limit: export without hashes */ }
+  } catch { return []; /* offline / CORS / rate limit: export without hashes */ }
   return all;
 }

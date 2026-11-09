@@ -181,7 +181,7 @@ export function signedFromHash(hash) {
 }
 export const loadWallet = (opts) => import(new URL('vendor/wallet.js', import.meta.url).href).then((m) => m.initWallet(opts));
 export const qrDataUrl = (text) => import(new URL('vendor/qr.js', import.meta.url).href).then((m) => m.toDataURL(text));
-export const explorerTx = (h) => `https://testnet.nearblocks.io/txns/${h}`;
+export const explorerTx = (h) => `https://testnet.near.rocks/txns/${h}`; // the testnet.nearblocks.io UI is Cloudflare-blocked
 
 /**
  * Gasless path (NEP-366): if a relayer is configured and the browser holds the function-call key the wallet added at
@@ -275,6 +275,14 @@ export async function mountWidget(host, eventId, { rpc, relayer, fetchImpl = fet
   if ($('.cmd')) $('.cmd').textContent = rsvpCommand(eventId, s.deposit);
   let wallet = null, action = guestAction(s, null, null);
 
+  // s is reused by guestAction, so refresh it in place after a tx changes active / spots left
+  async function refreshInfo() {
+    const fresh = await viewCall(eventId, 'get_info', {}, { rpc, fetchImpl });
+    Object.assign(s, eventSummary(fresh, BigInt(Date.now()) * 1_000_000n));
+    const spots = $('[data-k="spots"]'), bar = $('.bar');
+    if (spots) spots.textContent = String(s.spotsLeft);
+    if (bar) { bar.title = `${s.active} of ${s.capacity} spots taken`; bar.querySelector('i').style.width = `${s.capacity ? Math.round((100 * s.active) / s.capacity) : 0}%`; }
+  }
   const say = (msg, err) => { note.hidden = !msg; note.textContent = msg || ''; note.className = err ? 'note err' : 'note'; };
   async function render(accountId) {
     let status = null, statusErr = null;
@@ -336,6 +344,7 @@ export async function mountWidget(host, eventId, { rpc, relayer, fetchImpl = fet
         ? gaslessCall({ relayer, accountId: w.accountId(), receiverId: eventId, methodName: 'cancel', rpc, fetchImpl }) : null),
       () => w.call(eventId, action.kind === 'rsvp' ? 'rsvp' : 'cancel', {}, { deposit: action.kind === 'rsvp' ? s.deposit : '0' }));
       const h = out?.hash ?? out?.transaction?.hash, did = action.kind;
+      await refreshInfo().catch(() => {}); // the tx went through; a stale spots count is not worth an error
       await render(w.accountId());
       // render() clears the note when the new state has none (after a cancel), so confirm explicitly and keep the tx link visible
       if (did === 'cancel' && !note.textContent) say(`Cancelled. Your ${s.depositNear} NEAR deposit was refunded.`);
