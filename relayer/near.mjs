@@ -17,7 +17,8 @@ export async function rpc(method, params, { rpcs = RPCS, fetchImpl = fetch, time
         body: JSON.stringify({ jsonrpc: '2.0', id: 'showup-relayer', method, params }) });
       const j = await r.json();
       if (j.error) {
-        const e = new Error(`RPC ${method}: ${JSON.stringify(j.error.cause ?? j.error.data ?? j.error).slice(0, 400)}`); e.rpc = j.error;
+        // cause is often just {name:'INVALID_TRANSACTION', info:{}}; the real reason (e.g. NotEnoughBalance) is in data
+        const e = new Error(`RPC ${method}: ${JSON.stringify(j.error.data !== undefined && j.error.cause ? { cause: j.error.cause, data: j.error.data } : (j.error.cause ?? j.error.data ?? j.error)).slice(0, 600)}`); e.rpc = j.error;
         if (j.error.code === -429 || /TIMEOUT|-429/.test(e.message)) { last = e; continue; }
         throw e;
       }

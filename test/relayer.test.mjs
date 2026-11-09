@@ -218,3 +218,14 @@ test('health reports relayer balance, low funds, and survives an RPC outage', as
     { ok: true, ...info, rpc: 'unreachable', balance_yocto: null, balance_near: null, low_funds: null });
   assert.deepEqual(await health(info), { ok: true, ...info });
 });
+test('real RPC NotEnoughBalance body (reason only in error.data) maps to RELAYER_OUT_OF_FUNDS', async () => {
+  const { rpc } = await import('../relayer/near.mjs');
+  const { friendlySendError } = await import('../relayer/server.mjs');
+  // recorded from rpc.testnet.near.org / fastnear on 2026-11-09: cause.info is empty, the reason is in data
+  const body = { jsonrpc: '2.0', id: 1, error: { name: 'HANDLER_ERROR', cause: { info: {}, name: 'INVALID_TRANSACTION' }, code: -32000, message: 'Server error',
+    data: { TxExecutionError: { InvalidTxError: { NotEnoughBalance: { balance: '1850000000000000000000', cost: '245500818750000000000', signer_id: 'broke.relayer.testnet' } } } } } };
+  const err = await rpc('send_tx', {}, { rpcs: ['http://x'], fetchImpl: async () => ({ json: async () => body }) }).catch((e) => e);
+  assert.match(err.message, /NotEnoughBalance/);
+  assert.equal(friendlySendError(err, 'broke.relayer.testnet').code, 'RELAYER_OUT_OF_FUNDS');
+  assert.equal(friendlySendError(err, 'other-relayer.testnet'), null); // someone else's balance: not the relayer's problem
+});
