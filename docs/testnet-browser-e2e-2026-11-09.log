@@ -1,0 +1,28 @@
+# ShowUp browser E2E, NEAR TESTNET, 2026-11-09T06:51:00.379Z; pages http://localhost:8092; event ui-1794207060.showup-factory-1793597558.testnet; relayer showup-relayer-1793775606.testnet; CANCEL_S=240 CHECKIN_S=120
+PASS 1 create_event: ui-1794207060.showup-factory-1793597558.testnet, 0.01 NEAR deposit https://testnet.nearblocks.io/txns/5NXS7z7jwWDETLxoncz6RAXkYzczH3t3AyPLEYJk18JQ
+PASS 1 rsvp showup-rguest-a-1793775606: locked 0.01 NEAR https://testnet.nearblocks.io/txns/Ccg8Ei9JmkXwTpfi8N478b7ddUQrWBdkruHQXXBXzKbu
+PASS 1 rsvp showup-rguest-b-1793775606: locked 0.01 NEAR https://testnet.nearblocks.io/txns/7xYbbo3bSGZozCLETE18viKtwqZ4Hxpp6j4tg9jpUMK1
+PASS 1 rsvp showup-guest-1793597596: locked 0.01 NEAR https://testnet.nearblocks.io/txns/6RoFbB9t1vytQb3UK1TDKCVr62HZ1qzSUCFrTzJmQS6V
+PASS 0 sign-in key for showup-rguest-a-1793775606: function-call key scoped to the event, 0.25 NEAR allowance https://testnet.nearblocks.io/txns/HRUpw5FQhwbNLqixqWTC2jk4TUHr4pTsJujK8cqab4xk
+PASS 0 sign-in key for showup-rguest-b-1793775606: function-call key scoped to the event, 0.25 NEAR allowance https://testnet.nearblocks.io/txns/CHCjgzsW5fHPqH2bfpyMqAV84U78fzv3etiN47hEBBMv
+PASS 0 sign-in key for showup-rhost-1793775606: function-call key scoped to the event, 0.25 NEAR allowance https://testnet.nearblocks.io/txns/bDfrkxeatyQWUaBJyRyZW4ZecnvhiLE2QGJNPn2NDrd
+PASS 2 signed-in widget: "ui-1794207060.showup-factory-1793597558.testnet RSVP open Deposit 0.01 NEAR Capacity 5 Spots left 2 Show up and get your deposit back plus a share of the no-shows' deposits. You can cancel for a full refund until 2026-11"
+PASS 2 door pass offered: QR area shows "Create my signed door pass"
+#   [relayer] sent J7CWuzJC53zs4Wt9F2Te1nSEe5HZ9846GRkC1DKcb3nB showup-rguest-a-1793775606.testnet ui-1794207060.showup-factory-1793597558.testnet cancel ok 3328 ms
+PASS 3 gasless Cancel click: widget "ui-1794207060.showup-factory-1793597558.testnet RSVP open Deposit 0.01 NEAR Capacity 5 Spots left 2 Show up and get your deposit back plus a share of the no-shows' deposits. You can cancel for a full " https://testnet.nearblocks.io/txns/J7CWuzJC53zs4Wt9F2Te1nSEe5HZ9846GRkC1DKcb3nB
+PASS 3 guest A refunded exactly, paid no gas: A balance change 0.01 NEAR https://testnet.nearblocks.io/txns/J7CWuzJC53zs4Wt9F2Te1nSEe5HZ9846GRkC1DKcb3nB
+PASS 4 RSVP hands the exact tx to MyNearWallet: wallet https://testnet.mynearwallet.com/sign: showup-rguest-a-1793775606.testnet → ui-1794207060.showup-factory-1793597558.testnet rsvp({}) deposit 0.01 NEAR
+PASS 4 no page errors: []
+PASS 5 relayer unreachable: cancel falls back to the wallet path: signed in the browser with the sign-in key (guest pays gas); B balance change 0.0097549598156545 NEAR; widget "ui-1794207060.showup-factory-1793597558.testnet RSVP open Deposit 0.01 NEAR Capacity 5 Spots left 3 Show up and get your deposit back plus a share of the no-sho"
+PASS 5 no page errors: []
+# waiting for check-in to open (2026-11-09T06:55:00.379Z)…
+PASS 6 host signed in on door page: host You can check guests in.
+#   [relayer] sent dPJsVpuxbxpvhevGhyHtdwQCUNY1K9WMKfKYVJVWuwo showup-rhost-1793775606.testnet ui-1794207060.showup-factory-1793597558.testnet check_in ok 2890 ms
+PASS 6 gasless check_in click: guest C CheckedIn; page "showup-guest-1793597596.testnet CheckedIn ✓ View tx" https://testnet.nearblocks.io/txns/dPJsVpuxbxpvhevGhyHtdwQCUNY1K9WMKfKYVJVWuwo
+PASS 6 host paid nothing: host balance change 0 NEAR https://testnet.nearblocks.io/txns/dPJsVpuxbxpvhevGhyHtdwQCUNY1K9WMKfKYVJVWuwo
+PASS 6 no page errors: []
+# waiting for check-in to close (2026-11-09T06:57:00.379Z)…
+PASS 7 settle (anyone): settled https://testnet.nearblocks.io/txns/965TNtv32mCJkQmBts8Q3kPhTphbqe4N6G3khsNEDnkS
+PASS 7 CSV download: showup-ui-1794207060.showup-factory-1793597558.testnet-ledger.csv, 1 rows: showup-guest-1793597596.testnet=attended
+PASS 7 CSV: C attended, paid 0.01: ["ui-1794207060.showup-factory-1793597558.testnet","near-testnet","showup-guest-1793597596.testnet","attended","","0.01","","","","","0.01","","","https://testnet.nearblocks.io/address/showup-guest-17
+SUMMARY pass 22 fail 0

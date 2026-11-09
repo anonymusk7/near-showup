@@ -103,7 +103,7 @@ try {
     await widgetBtn(page).click();
     await until(async () => /gasless|relayer:|error/i.test(await widgetText(page)), 90_000, 1000);
     const after = await until(async () => (await status(GA)) === null ? stableBal(GA) : null, 60_000);
-    const note = (await widgetText(page)).replace(/\s+/g, ' ');
+    const note = (await page.evaluate(() => document.querySelector('#live')?.shadowRoot?.querySelector('.note:not([hidden])')?.innerText || '')).replace(/\s+/g, ' ');
     const hash = await page.evaluate(() => document.querySelector('#live')?.shadowRoot?.querySelector('.note a')?.href?.split('/').pop());
     check('3 gasless Cancel click', /gasless: the relayer paid the gas/.test(note) && after != null, `widget "${note.slice(0, 200)}"`, hash);
     check('3 guest A refunded exactly, paid no gas', after != null && after - before === DEPOSIT, `A balance change ${after != null ? near4(after - before) : '?'}`, hash);
