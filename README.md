@@ -28,6 +28,7 @@ It's a static GitHub Pages build of `widget/`, `dashboard/` and two browser libs
 - View calls go straight to testnet RPC.
 - 1Click dry quotes are called directly. 1Click answers CORS (`access-control-allow-origin: *`, checked 9 Nov 2026), so the page needs no proxy.
 - Sign in with a **Meteor** testnet wallet. MyNearWallet now answers "MyNearWallet can't connect to apps anymore" to new app connections (seen 9 Nov 2026), so use Meteor. No relayer runs on Pages, so **Cancel** and door **Check in** are signed by your wallet (about 0.00025 testnet NEAR gas). The gasless NEP-366 path needs `pnpm relayer` locally (see below).
+- Real Meteor wallet RSVP from the hosted widget (`singlearena8922.testnet` → `demo-day.showup-factory-1793597558.testnet`, `rsvp` with a 0.1 NEAR deposit, 9 Nov 2026): [`12MHQ7sVjBdLwTmt9P1HJpfHCyUWUyCBBjiZ9RjR5F2k`](https://testnet.near.rocks/tx/12MHQ7sVjBdLwTmt9P1HJpfHCyUWUyCBBjiZ9RjR5F2k).
 
 Events shown:
 - **`demo-day.showup-factory-1793597558.testnet`** (default) was created 9 Nov 2026 by `scripts/live-event-testnet.mjs` (tx `dBXYe8Aau67NVe2kuB3Nqw7CcUUVyWQhfa9RqaVrr2Q`). It takes 0.1 NEAR deposits with capacity 25. RSVP/cancel is open until 2026-11-09 16:00 UTC, and door check-in is open from then until 2026-11-30 18:30 UTC. The escrow requires `cancel_deadline <= checkin_start`, so RSVP and check-in never overlap.
@@ -196,7 +197,7 @@ MIT (see `LICENSE`).
   - the frame signature;
   - that the code is ≤ 30 s old;
   - that it has not been scanned before.
-- **Judge check:** `pnpm test` should give 66 JS tests passing (the pass tests are in `test/pass.test.mjs`). `node scripts/pass-testnet.mjs showup-guest-1793597596.testnet` needs that testnet key in `~/.near-credentials`; it prints live ✓, replay ✗, stale ✗, relabel ✗.
+- **Judge check:** `pnpm test` should give 68 JS tests passing (the pass tests are in `test/pass.test.mjs`). `node scripts/pass-testnet.mjs showup-guest-1793597596.testnet` needs that testnet key in `~/.near-credentials`; it prints live ✓, replay ✗, stale ✗, relabel ✗.
 - **Limits:**
   - Someone relaying the live screen in real time is not stopped.
   - The door verifies the pass; the contract's `check_in` is still host/checker-authorized.
