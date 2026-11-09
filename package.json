@@ -10,5 +10,7 @@
     "serve": "node scripts/serve.mjs",
     "view": "node scripts/view.mjs",
     "relayer": "node relayer/server.mjs",
-    "relayer:demo": "node relayer/demo-testnet.mjs"
+    "relayer:demo": "node relayer/demo-testnet.mjs",
+    "ui:mobile": "node scripts/ui-mobile.mjs",
+    "scenarios:testnet": "node scripts/scenarios-testnet.mjs"
   } }
