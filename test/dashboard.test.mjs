@@ -121,3 +121,42 @@ test('dashboard has an Export CSV button wired to ledgerCsv', () => {
   const h = readFileSync(new URL('../dashboard/index.html', import.meta.url), 'utf8');
   assert.match(h, /<button id="csv" type="button">Export CSV<\/button>/); assert.match(h, /ledgerCsv\(id, info, guests, txns\)/);
 });
+
+test('CSV injection: OWASP prefixes (= + - @, after whitespace, tab/CR) are defused; numbers and text are not', () => {
+  assert.equal(csvCell("=cmd|' /C calc'!A0"), "'=cmd|' /C calc'!A0");
+  assert.equal(csvCell('+1'), "'+1"); assert.equal(csvCell('-2+3'), "'-2+3"); assert.equal(csvCell('@SUM(A1)'), "'@SUM(A1)");
+  assert.equal(csvCell(' =1'), "' =1"); assert.equal(csvCell('\t=1'), "'\t=1"); assert.equal(csvCell('\tplain'), "'\tplain");
+  assert.equal(csvCell('\r=1'), '"\'\r=1"'); // still quoted because of the CR
+  assert.equal(csvCell('=1,"x"\n'), '"\'=1,""x""\n"');
+  for (const ok of ['0.2', '1.333333333333333333333333', '0', 'alice.testnet', 'a-b.testnet', '2026-11-02T05:00:00.000Z', 'note - with dash'])
+    assert.equal(csvCell(ok), ok);
+  assert.equal(csvCell('say "hi", ok'), '"say ""hi"", ok"'); assert.equal(csvCell('a\r\nb'), '"a\r\nb"');
+  assert.equal(csvCell('ünïcødé-guest.testnet'), 'ünïcødé-guest.testnet'); assert.equal(csvCell('名前,テスト'), '"名前,テスト"');
+  assert.equal(csvCell('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'), '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'); // implicit account
+});
+test('ledger CSV of an empty event is header only (unsettled and settled)', () => {
+  const header = CSV_COLUMNS.join(',') + '\r\n';
+  const info = { host: 'host.testnet', deposit: D.toString(), settled: false, cancelled: 3 };
+  assert.equal(ledgerCsv('ev.testnet', info, [], []), header);
+  assert.equal(ledgerCsv('ev.testnet', { ...info, settled: true }, [], []), header);
+});
+const dash = () => readFileSync(new URL('../dashboard/index.html', import.meta.url), 'utf8');
+test('dashboard: fits 360px (select/input/tiles shrink, table scrolls), friendly RPC errors, cancelled from get_info', () => {
+  const h = dash();
+  assert.match(h, /select\{max-width:100%;min-width:0\}/);
+  assert.match(h, /input\{[^}]*min-width:0;max-width:100%/); assert.ok(!/min-width:280px/.test(h));
+  assert.match(h, /\.tile\{[^}]*flex:1 1 100px;min-width:0/);
+  assert.match(h, /<div style="overflow-x:auto"><table>/); assert.match(h, /td\.acct\{word-break:break-all\}/); assert.match(h, /<td class="acct">/);
+  assert.match(h, /No guests yet/);
+  assert.match(h, /friendlyRpcError\(err\)/); assert.match(h, /<button id="retry" type="button">Retry<\/button>/); assert.ok(!/e\(err\.message\)/.test(h));
+  assert.match(h, /info\.cancelled \?\? p\.tally\.Cancelled/);
+});
+test('checkin.html: bad event and RPC outage show a friendly message + Retry instead of hanging on "Loading…"', () => {
+  const h = readFileSync(new URL('../dashboard/checkin.html', import.meta.url), 'utf8');
+  assert.ok(!h.includes("throw new Error('bad event')"));
+  assert.match(h, /viewCall\(EVENT, 'get_info', \{\}\)\.catch\(\(x\) => halt\(friendlyRpcError\(x\), true\)\)/);
+  assert.match(h, /if \(!isAccountId\(EVENT\)\) await halt\(/);
+  assert.match(h, /<div class="card" id="fatal" hidden><\/div>/); assert.match(h, /id="retry" type="button">Retry/);
+  assert.ok(!/get_status', \{ account_id: guest \}\)\.catch\(\(\) => null\)/.test(h), 'RPC errors must not read as "no RSVP"');
+  assert.match(h, /gaslessOrWallet\(/);
+});

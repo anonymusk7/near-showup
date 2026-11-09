@@ -146,3 +146,54 @@ test('gaslessCall: null without relayer/key, relays with the browser function-ca
   const refusing = async (url, o) => (url.endsWith('/relay') ? { ok: false, status: 403, json: async () => ({ ok: false, error: 'outside check-in window' }) } : fetchImpl(url, o));
   await assert.rejects(c.gaslessCall({ relayer: 'http://r', accountId: 'g.testnet', storage: store, receiverId: 'ev.testnet', methodName: 'cancel', fetchImpl: refusing }), /outside check-in window/);
 });
+
+test('friendlyRpcError: outage vs missing event vs other', () => {
+  const down = "Can't reach NEAR testnet right now. Check your connection and try again.";
+  const missing = "This event wasn't found on NEAR testnet. Check the event account.";
+  for (const e of [new TypeError('Failed to fetch'), new TypeError('fetch failed'), new Error('RPC HTTP 503'), new Error('RPC HTTP 429'), new Error('RPC -429 deprecated'),
+    Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }), Object.assign(new Error('signal is aborted'), { name: 'AbortError' }), new Error('NetworkError when attempting to fetch resource.')])
+    assert.equal(c.friendlyRpcError(e), down, e.message);
+  for (const e of [new Error('RPC error: UNKNOWN_ACCOUNT'), new Error('view failed: wasm execution failed with error: CompilationError(CodeDoesNotExist { account_id: "x" })'),
+    new Error('view failed: MethodResolveError(MethodNotFound)'), new Error('account nope.testnet does not exist while viewing')])
+    assert.equal(c.friendlyRpcError(e), missing, e.message);
+  assert.equal(c.friendlyRpcError(new Error('  view failed:\n  something odd  ')), 'view failed: something odd');
+  assert.equal(c.friendlyRpcError(new Error('x'.repeat(300))).length, 201);
+});
+test('mountWidget: RPC down shows the friendly message and a Try again button that re-mounts', async () => {
+  let calls = 0, shadows = 0;
+  const retry = {}, root = { innerHTML: '', querySelector: (q) => (q === '.retry' ? retry : null) };
+  const host = { shadowRoot: null, attachShadow() { shadows++; this.shadowRoot = root; return root; } };
+  const fetchImpl = async () => { calls++; throw new TypeError('Failed to fetch'); };
+  assert.equal(await c.mountWidget(host, 'ev.testnet', { fetchImpl }), null);
+  assert.match(root.innerHTML, /Can&#39;t reach NEAR testnet right now/); assert.match(root.innerHTML, /<button class="retry">Try again<\/button>/);
+  assert.ok(!root.innerHTML.includes('Failed to fetch'));
+  const before = calls; await retry.onclick();
+  assert.ok(calls > before, 'retried the RPC'); assert.equal(shadows, 1, 'shadow root reused, not re-attached');
+});
+test('onboarding hint for new users and hidden empty elements', () => {
+  const html = c.renderCard('ev.testnet', c.eventSummary(info(), 50n));
+  assert.match(html, /<p class="hint">New to NEAR\? Create a free testnet wallet at <a href="https:\/\/testnet\.mynearwallet\.com\/"[^>]*>MyNearWallet<\/a>/);
+  assert.match(html, /<a href="https:\/\/near-faucet\.io\/"/);
+  assert.ok(!c.renderCard('ev.testnet', c.eventSummary(info({ settled: true }), 50n)).includes('class="hint"'), 'no hint once RSVP is closed');
+  // .who is display:flex with a grey background; without this the hidden, empty .who rendered as a grey bar
+  assert.match(c.CSS, /\[hidden\],\.note:empty\{display:none!important\}/);
+  assert.match(c.CSS, /\.hint\{[^}]*overflow-wrap:anywhere/);
+});
+test('gasless failures (403 / 503 outage / out of funds) fall back to the wallet', async () => {
+  const { b58encode } = await import('../widget/vendor/crypto.js');
+  const sk = 'ed25519:' + b58encode(new Uint8Array(32).fill(3));
+  const store = { getItem: (k) => (k === 'near-api-js:keystore:g.testnet:testnet' ? sk : null) };
+  const bodies = [{ ok: false, error: 'NEAR testnet RPC is unreachable right now; nothing was sent. Try again in a minute.', retryable: true },
+    { ok: false, error: 'The gasless relayer is out of testnet NEAR', retryable: false, code: 'RELAYER_OUT_OF_FUNDS' }];
+  for (const b of bodies) {
+    const fetchImpl = async (url, o) => (url.endsWith('/relay') ? { ok: false, status: 503, json: async () => b }
+      : { json: async () => ({ result: JSON.parse(o.body).method === 'block' ? { header: { height: 10 } } : { nonce: 1 } }) });
+    const warned = [];
+    const out = await c.gaslessOrWallet(() => c.gaslessCall({ relayer: 'http://r', accountId: 'g.testnet', storage: store, receiverId: 'ev.testnet', methodName: 'cancel', fetchImpl }),
+      async () => ({ transaction: { hash: 'WALLET' } }), (m) => warned.push(m));
+    assert.deepEqual(out, { transaction: { hash: 'WALLET' } }); assert.match(warned[0], /^relayer: /);
+  }
+  assert.deepEqual(await c.gaslessOrWallet(async () => ({ hash: 'G', gasless: true }), () => assert.fail('wallet not needed')), { hash: 'G', gasless: true });
+  assert.equal(await c.gaslessOrWallet(() => null, async () => 'wallet'), 'wallet');
+  assert.equal(await c.gaslessOrWallet(() => { throw new Error('sync'); }, async () => 'wallet', () => {}), 'wallet');
+});

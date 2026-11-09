@@ -32,10 +32,10 @@ export const CSV_COLUMNS = ['event', 'network', 'guest_account', 'status', 'rsvp
   'refund_near', 'refund_time_utc', 'refund_tx', 'payout_near', 'payout_time_utc', 'payout_tx', 'explorer_url'];
 
 /** RFC 4180: comma separated, CRLF line ends, fields with , " CR LF quoted and " doubled. Cells that a spreadsheet
- * would run as a formula (= + @ tab CR at the start) get a leading apostrophe. */
+ * would run as a formula (OWASP: = + - @, also after leading whitespace, or a leading tab / CR) get a leading apostrophe. */
 export function csvCell(v) {
   let s = v == null ? '' : String(v);
-  if (/^[=+@\t\r]/.test(s)) s = `'${s}`;
+  if (/^\s*[=+\-@]|^[\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 export const toCsv = (columns, rows) => [columns, ...rows.map((r) => columns.map((c) => r[c]))].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';

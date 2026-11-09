@@ -12,6 +12,15 @@ export function friendlyQuoteError(err) {
     return '1Click quotes are unavailable right now (the service looks down). You can still RSVP by paying in NEAR.';
   return m.length > 200 ? m.slice(0, 200) + '…' : m;
 }
+/** Short, human error for a failed NEAR RPC view (event load, status read). */
+export function friendlyRpcError(err) {
+  const m = String(err?.message || err || 'unknown error'), n = String(err?.name || '');
+  if (/UNKNOWN_ACCOUNT|does not exist|CodeDoesNotExist|MethodNotFound/i.test(m)) return 'This event wasn\'t found on NEAR testnet. Check the event account.';
+  if (/^(TimeoutError|AbortError)$/.test(n) || /Failed to fetch|fetch failed|NetworkError|Load failed|ECONN|ENOTFOUND|EAI_AGAIN|time(d)? ?out|aborted|-429|HTTP (429|5\d\d)|malformed RPC/i.test(m))
+    return 'Can\'t reach NEAR testnet right now. Check your connection and try again.';
+  const t = m.replace(/\s+/g, ' ').trim();
+  return t.length > 200 ? t.slice(0, 200) + '…' : t;
+}
 export const YOCTO = 10n ** 24n;
 // 1Click runs on mainnet only, so the preview prices the deposit as wNEAR on mainnet.
 export const WNEAR = 'nep141:wrap.near';
@@ -186,6 +195,14 @@ export async function gaslessCall({ relayer, accountId, receiverId, methodName, 
   return { hash: out.hash, gasless: true };
 }
 
+/** Try the gasless relayer first; on any relayer failure (403, 502, 503 outage / out of funds, offline) use the wallet. */
+export async function gaslessOrWallet(gasless, viaWallet, warn = (m) => console.warn('ShowUp gasless path unavailable, using the wallet:', m)) {
+  const out = await Promise.resolve().then(gasless).catch((e) => { warn(e?.message || String(e)); return null; });
+  return out ?? viaWallet();
+}
+
+export const ONBOARDING_HINT = 'New to NEAR? Create a free testnet wallet at <a href="https://testnet.mynearwallet.com/" target="_blank" rel="noreferrer">MyNearWallet</a> — testnet NEAR is free from the <a href="https://near-faucet.io/" target="_blank" rel="noreferrer">faucet</a>.';
+
 export function renderCard(eventId, s) {
   const e = escapeHtml;
   const opts = ORIGINS.map((o) => `<option value="${o.id}">${e(o.label)}</option>`).join('');
@@ -201,6 +218,7 @@ export function renderCard(eventId, s) {
   <p class="fine">Show up and get your deposit back plus a share of the no-shows' deposits. ${s.phase === 'open' ? `You can cancel for a full refund until ${e(s.cancelDeadline.replace('T', ' ').slice(0, 16))} UTC.` : 'RSVPs are closed.'}</p>
   <div class="who" hidden></div>
   <button class="rsvp" ${s.canRsvp ? '' : 'disabled'}>${s.canRsvp ? `RSVP: lock ${e(s.depositNear)} NEAR` : e(s.phaseLabel)}</button>
+  ${s.canRsvp ? `<p class="hint">${ONBOARDING_HINT}</p>` : ''}
   <p class="note" hidden></p>
   <div class="qr" hidden></div>
   ${s.canRsvp ? `<details class="cli"><summary>Prefer a terminal?</summary><pre class="cmd"></pre></details>` : ''}
@@ -209,7 +227,7 @@ export function renderCard(eventId, s) {
 }
 
 export const CSS = `:host{all:initial;font:14px/1.45 ui-sans-serif,system-ui,-apple-system,sans-serif;color:#0f172a}
-*{box-sizing:border-box}
+*{box-sizing:border-box}[hidden],.note:empty{display:none!important}
 .card{border:1px solid #e2e8f0;border-radius:16px;padding:18px;max-width:390px;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.04),0 8px 24px -12px rgb(15 23 42/.18)}
 .head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;word-break:break-all}
 .pill{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:99px;background:#f1f5f9;color:#334155;white-space:nowrap}
@@ -225,6 +243,8 @@ button:hover:not([disabled]){background:#1e293b}button:active:not([disabled]){tr
 button.cancel{background:#fff;color:#b91c1c;border:1px solid #fecaca}button.cancel:hover:not([disabled]){background:#fef2f2}
 button[disabled]{background:#cbd5e1;color:#475569;cursor:default}
 .note{font-size:12.5px;color:#166534;margin:8px 0 0}.note.err{color:#b91c1c}
+.hint{font-size:11.5px;color:#64748b;margin:6px 0 0;overflow-wrap:anywhere}.hint a{color:#334155}
+button.retry{margin-top:10px}
 .qr{text-align:center;margin-top:12px;padding:12px;border:1px dashed #cbd5e1;border-radius:12px}.qr img{width:180px;height:180px;image-rendering:pixelated}.qr small{display:block;color:#64748b;font-size:11.5px;word-break:break-all}
 details.cli{margin-top:10px;font-size:12px;color:#475569}summary{cursor:pointer}
 .cmd{white-space:pre-wrap;word-break:break-all;font-size:11px;background:#f8fafc;padding:8px;border-radius:8px}
@@ -233,28 +253,33 @@ details.cli{margin-top:10px;font-size:12px;color:#475569}summary{cursor:pointer}
 
 /** DOM glue: renders into a shadow root and wires wallet sign-in, RSVP/cancel, the guest QR and the quote selector. */
 export async function mountWidget(host, eventId, { rpc, relayer, fetchImpl = fetch } = {}) {
-  const root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
+  const root = host.shadowRoot || (host.attachShadow ? host.attachShadow({ mode: 'open' }) : host); // reused on "Try again"
   root.innerHTML = `<style>${CSS}</style><div class="card">Loading ${escapeHtml(eventId)}…</div>`;
   let info;
   try { info = await viewCall(eventId, 'get_info', {}, { rpc, fetchImpl }); }
-  catch (err) { root.innerHTML = `<style>${CSS}</style><div class="card err">ShowUp: ${escapeHtml(err.message)}</div>`; return; }
+  catch (err) {
+    root.innerHTML = `<style>${CSS}</style><div class="card"><p class="note err">${escapeHtml(friendlyRpcError(err))}</p><button class="retry">Try again</button></div>`;
+    root.querySelector('.retry').onclick = () => mountWidget(host, eventId, { rpc, relayer, fetchImpl });
+    return null;
+  }
   const s = eventSummary(info, BigInt(Date.now()) * 1_000_000n);
   root.innerHTML = `<style>${CSS}</style>${renderCard(eventId, s)}`;
   const $ = (q) => root.querySelector(q);
-  const btn = $('.rsvp'), note = $('.note'), who = $('.who'), qr = $('.qr');
+  const btn = $('.rsvp'), note = $('.note'), who = $('.who'), qr = $('.qr'), hint = $('.hint');
   if ($('.cmd')) $('.cmd').textContent = rsvpCommand(eventId, s.deposit);
   let wallet = null, action = guestAction(s, null, null);
 
   const say = (msg, err) => { note.hidden = !msg; note.textContent = msg || ''; note.className = err ? 'note err' : 'note'; };
   async function render(accountId) {
-    let status = null;
-    if (accountId) { try { status = await viewCall(eventId, 'get_status', { account_id: accountId }, { rpc, fetchImpl }); } catch (e) { say(e.message, true); } }
+    let status = null, statusErr = null;
+    if (accountId) { try { status = await viewCall(eventId, 'get_status', { account_id: accountId }, { rpc, fetchImpl }); } catch (e) { statusErr = friendlyRpcError(e); } }
     action = guestAction(s, status, accountId);
+    if (hint) hint.hidden = action.kind !== 'signin';
     btn.textContent = action.label; btn.disabled = !!action.disabled; btn.className = `rsvp ${action.kind === 'cancel' ? 'cancel' : ''}`;
     who.hidden = !accountId;
     if (accountId) who.innerHTML = `<span>Signed in as <b>${escapeHtml(accountId)}</b></span><a class="out">Sign out</a>`;
     if (accountId) who.querySelector('.out').onclick = async () => { await wallet?.signOut(); render(null); };
-    say(action.note);
+    if (statusErr) say(statusErr, true); else say(action.note);
     qr.hidden = !(status === 'Rsvp' && accountId && s.phase !== 'ended' && s.phase !== 'settled');
     clearInterval(rotor);
     if (!qr.hidden) await showPass(accountId);
@@ -300,13 +325,10 @@ export async function mountWidget(host, eventId, { rpc, relayer, fetchImpl = fet
       const w = await ensureWallet();
       if (action.kind === 'signin') { w.signIn(); btn.disabled = false; return; }
       say(action.kind === 'rsvp' ? 'Confirm the RSVP in your wallet…' : 'Confirm the cancellation in your wallet…');
-      let out = null;
-      if (action.kind === 'cancel' && relayer) {
-        // rsvp attaches the deposit, so only cancel can go through the gasless relayer
-        out = await gaslessCall({ relayer, accountId: w.accountId(), receiverId: eventId, methodName: 'cancel', rpc, fetchImpl })
-          .catch((e) => { console.warn('ShowUp gasless cancel unavailable, using the wallet:', e.message); return null; });
-      }
-      out ??= await w.call(eventId, action.kind === 'rsvp' ? 'rsvp' : 'cancel', {}, { deposit: action.kind === 'rsvp' ? s.deposit : '0' });
+      // rsvp attaches the deposit, so only cancel can go through the gasless relayer
+      const out = await gaslessOrWallet(() => (action.kind === 'cancel' && relayer
+        ? gaslessCall({ relayer, accountId: w.accountId(), receiverId: eventId, methodName: 'cancel', rpc, fetchImpl }) : null),
+      () => w.call(eventId, action.kind === 'rsvp' ? 'rsvp' : 'cancel', {}, { deposit: action.kind === 'rsvp' ? s.deposit : '0' }));
       const h = out?.hash ?? out?.transaction?.hash;
       await render(w.accountId());
       if (h) note.insertAdjacentHTML('beforeend', ` <a href="${explorerTx(h)}" target="_blank" rel="noreferrer">View tx</a>${out?.gasless ? ' (gasless: the relayer paid the gas)' : ''}`);

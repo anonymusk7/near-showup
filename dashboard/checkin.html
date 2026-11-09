@@ -17,6 +17,7 @@ ul{padding-left:18px;margin:6px 0}a{color:#334155}
 <body>
 <h1>Door check-in</h1>
 <p class="sub" id="ev"></p>
+<div class="card" id="fatal" hidden></div>
 <div class="card">
   <div class="row"><span id="me">Not signed in</span><button id="auth">Sign in as host / checker</button></div>
   <p id="role"><small>Only the event host or an added checker can call <code>check_in</code>. The contract enforces this; this page just shows the reason before you sign.</small></p>
@@ -30,16 +31,23 @@ ul{padding-left:18px;margin:6px 0}a{color:#334155}
 <div class="card"><b>Recent check-ins</b><ul id="log"><li><small>None yet in this session.</small></li></ul></div>
 <p><small><a id="dash" href="#">← Host dashboard</a></small></p>
 <script type="module">
-import { viewCall, escapeHtml as e, parseCheckinPayload, checkinCheck, loadWallet, walletWasUsed, explorerTx, isAccountId, RPC_FALLBACKS, gaslessCall } from '../widget/core.mjs';
+import { viewCall, escapeHtml as e, parseCheckinPayload, checkinCheck, loadWallet, walletWasUsed, explorerTx, isAccountId, RPC_FALLBACKS, gaslessCall, gaslessOrWallet, friendlyRpcError } from '../widget/core.mjs';
 import { isPass, verifyPass, rpcAccessKey } from '../widget/pass.mjs';
 const seen = new Set(); // replay cache for this door
 const q = new URLSearchParams(location.search);
 const EVENT = q.get('event') || 'ethdenver-side.showup-factory-1793597558.testnet';
 const RELAYER = q.get('relayer') || null; // e.g. http://localhost:3030 (pnpm relayer)
-if (!isAccountId(EVENT)) throw new Error('bad event');
 const $ = (id) => document.getElementById(id);
+// Can't run without the event: explain why (Look up stays disabled) and stop evaluating this module without an uncaught error.
+const halt = (msg, retry) => {
+  $('fatal').hidden = false; $('lookup').title = 'Event not loaded';
+  $('fatal').innerHTML = `<p class="err">${e(msg)}</p>${retry ? '<button id="retry" type="button">Retry</button>' : ''}`;
+  if (retry) $('retry').onclick = () => location.reload();
+  return new Promise(() => {});
+};
 $('ev').textContent = EVENT; $('dash').href = `./?event=${encodeURIComponent(EVENT)}`;
-const info = await viewCall(EVENT, 'get_info', {});
+if (!isAccountId(EVENT)) await halt(`"${EVENT}" is not a NEAR account id. Open door check-in from the host dashboard, or fix the ?event= part of the link.`, false);
+const info = await viewCall(EVENT, 'get_info', {}).catch((x) => halt(friendlyRpcError(x), true));
 let wallet = null, me = null;
 
 function showMe() {
@@ -68,7 +76,9 @@ async function lookup(text) {
     try { ({ guest } = parseCheckinPayload(text, EVENT)); } catch (x) { box.innerHTML = `<p class="err">${e(x.message)}</p>`; return; }
   }
   box.innerHTML = `<small>Reading ${e(guest)}…</small>`;
-  const status = await viewCall(EVENT, 'get_status', { account_id: guest }).catch(() => null);
+  let status; // an RPC failure must not read as "no RSVP"
+  try { status = await viewCall(EVENT, 'get_status', { account_id: guest }); }
+  catch (x) { box.innerHTML = `<div class="row"><span class="guest">${e(guest)}</span></div><p class="err">${e(friendlyRpcError(x))} Scan or look up again.</p>`; return; }
   const chk = checkinCheck(info, { checker: me, status, nowNs: BigInt(Date.now()) * 1_000_000n });
   box.innerHTML = `<div class="row"><span class="guest">${e(guest)}</span><span class="pill ${status === 'Rsvp' ? 'ok' : status === 'CheckedIn' ? '' : 'bad'}">${e(status || 'no RSVP')}</span></div>
     <p>${pass ? `<span class="pill ok">signed pass ✓</span> <small>wallet key on-chain, code ${Math.max(0, Math.round(pass.ageMs / 1000))} s old, first scan</small>` : '<span class="pill bad">unsigned code</span> <small>A plain account id or old QR could be a screenshot. Check the guest\'s ID, or ask for the signed pass.</small>'}</p>
@@ -78,9 +88,8 @@ async function lookup(text) {
     $('go').disabled = true; $('go').textContent = 'Confirm in your wallet…';
     try {
       // ?relayer=<url>: gasless check_in signed with the wallet's function-call key; falls back to the wallet on any error
-      const out = (await gaslessCall({ relayer: RELAYER, accountId: me, receiverId: EVENT, methodName: 'check_in', args: { guest } })
-        .catch((x) => { console.warn('gasless check-in unavailable, using the wallet:', x.message); return null; }))
-        ?? await wallet.call(EVENT, 'check_in', { guest });
+      const out = await gaslessOrWallet(() => gaslessCall({ relayer: RELAYER, accountId: me, receiverId: EVENT, methodName: 'check_in', args: { guest } }),
+        () => wallet.call(EVENT, 'check_in', { guest }));
       const h = out?.hash ?? out?.transaction?.hash;
       box.innerHTML = `<div class="row"><span class="guest">${e(guest)}</span><span class="pill ok">CheckedIn ✓</span></div>${h ? `<p><a href="${explorerTx(h)}" target="_blank" rel="noreferrer">View tx</a></p>` : ''}`;
       if ($('log').querySelector('small')) $('log').innerHTML = '';
