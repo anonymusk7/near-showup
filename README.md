@@ -139,7 +139,7 @@ On the dashboard, **Export CSV** downloads `showup-<event>-ledger.csv` (RFC 4180
 - Tx hashes and times come from the NearBlocks API v3 receipts endpoint, `https://api-testnet.nearblocks.io/v3/accounts/<escrow>/receipts?limit=25` (paged with `meta.next_page`, at most 8 pages). The old v1 `/account/<escrow>/txns` API now returns 410.
 - The export reads receipts rather than txns because a gasless (NEP-366) cancel or check-in is a transaction signed by the relayer and sent to the guest or host. It doesn't show up under the escrow's txns, but its `cancel` / `check_in` receipt does.
 - When the indexer is unreachable, the hash and time cells stay blank.
-- `explorer_url` is a NEAR Rocks tx link (`https://testnet.near.rocks/txns/<hash>`) for the payout tx if there is one, otherwise the refund tx, otherwise the deposit tx. It's blank when a row has no tx hash. NEAR Rocks is used because the `testnet.nearblocks.io` UI sits behind a Cloudflare challenge.
+- `explorer_url` is a NEAR Rocks tx link (`https://testnet.near.rocks/tx/<hash>`) for the payout tx if there is one, otherwise the refund tx, otherwise the deposit tx. It's blank when a row has no tx hash. NEAR Rocks is used because the `testnet.nearblocks.io` UI sits behind a Cloudflare challenge.
 
 The logic is a pure function (`ledgerRows` / `ledgerCsv` / `csvCell` in `dashboard/logic.mjs`) and is tested against the settled demo event.
 

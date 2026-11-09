@@ -15,7 +15,7 @@ import { checkDelegate, checkAccessKey, verifyEscrowWithFactory, preflight } fro
 import * as near from './near.mjs';
 
 export const DEFAULT_FACTORY = 'showup-factory-1793597558.testnet';
-export const explorerTx = (h) => `https://testnet.near.rocks/txns/${h}`; // nearblocks UI is Cloudflare-blocked
+export const explorerTx = (h) => `https://testnet.near.rocks/tx/${h}`; // nearblocks UI is Cloudflare-blocked
 export const LOW_FUNDS_YOCTO = 5n * 10n ** 23n; // 0.5 NEAR
 export const RPC_DOWN_ERROR = 'NEAR testnet RPC is unreachable right now; nothing was sent. Try again in a minute.';
 const rpcDownResponse = () => [503, { ok: false, error: RPC_DOWN_ERROR, retryable: true }];

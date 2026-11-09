@@ -125,7 +125,7 @@ test('relay handler: sends accepted actions once, rejects others without sending
   const relay = createRelay({ factory: F, relayerId: 'relayer.testnet', chain });
   const b = body();
   const [st, ok] = await relay(b);
-  assert.equal(st, 200); assert.equal(ok.hash, 'HASH'); assert.equal(ok.explorer, 'https://testnet.near.rocks/txns/HASH');
+  assert.equal(st, 200); assert.equal(ok.hash, 'HASH'); assert.equal(ok.explorer, 'https://testnet.near.rocks/tx/HASH');
   const [st2, again] = await relay(b); // replay / client retry: same answer, not sent again
   assert.deepEqual([st2, again.hash, again.replayed], [200, 'HASH', true]);
   const [both1, both2] = await Promise.all([relay({ signed_delegate: N.encodeSignedDelegateBase64(sign({ nonce: 6n })) }), relay({ signed_delegate: N.encodeSignedDelegateBase64(sign({ nonce: 6n })) })]);

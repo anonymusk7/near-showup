@@ -28,8 +28,8 @@ export const fmtRow = (r) => ({ ...r, payoutNear: formatNear(r.payout, 6) });
 // NearBlocks API v3 (v1 now answers 410). Explorer links go to NEAR Rocks: the testnet.nearblocks.io UI is behind a Cloudflare challenge.
 export const NEARBLOCKS_API = 'https://api-testnet.nearblocks.io/v3';
 export const INDEXER_API = NEARBLOCKS_API;
-export const explorerTxUrl = (h) => `https://testnet.near.rocks/txns/${h}`;
-export const explorerAccountUrl = (a) => `https://testnet.near.rocks/accounts/${a}`;
+export const explorerTxUrl = (h) => `https://testnet.near.rocks/tx/${h}`;
+export const explorerAccountUrl = (a) => `https://testnet.near.rocks/account/${a}`;
 export const CSV_COLUMNS = ['event', 'network', 'guest_account', 'status', 'rsvp_time_utc', 'deposit_near', 'deposit_tx',
   'refund_near', 'refund_time_utc', 'refund_tx', 'payout_near', 'payout_time_utc', 'payout_tx', 'explorer_url'];
 

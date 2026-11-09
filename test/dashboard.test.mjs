@@ -91,8 +91,8 @@ test('ledger CSV for the settled demo event: one row per guest with deposit/payo
   const lines = csv.split('\r\n');
   assert.equal(lines[0], CSV_COLUMNS.join(',')); assert.equal(lines[0], 'event,network,guest_account,status,rsvp_time_utc,deposit_near,deposit_tx,refund_near,refund_time_utc,refund_tx,payout_near,payout_time_utc,payout_tx,explorer_url');
   assert.equal(lines.length, 4); assert.equal(lines.at(-1), '');
-  assert.equal(lines[1], 'showup-demo-1793595312.testnet,near-testnet,guest1-1793595336.testnet,attended,2026-11-02T04:56:40.000Z,0.1,7ij9J5qUDfXd4iprguGNPmyMbe6KrWvuKwytjVsnR5gr,,,,0.2,2026-11-02T05:00:00.000Z,5d5HTC8v9vAzPSuhed5MJZsGUypyr5GL6Rr4GkWmyBkT,https://testnet.near.rocks/txns/5d5HTC8v9vAzPSuhed5MJZsGUypyr5GL6Rr4GkWmyBkT');
-  assert.equal(lines[2], 'showup-demo-1793595312.testnet,near-testnet,guest2-1793595336.testnet,no_show_forfeited,2026-11-02T04:56:50.000Z,0.1,BoosPz7CHKaQppN1RgfBH5i82KrSfEtR3RGabsn7SaHe,,,,0,,,https://testnet.near.rocks/txns/BoosPz7CHKaQppN1RgfBH5i82KrSfEtR3RGabsn7SaHe');
+  assert.equal(lines[1], 'showup-demo-1793595312.testnet,near-testnet,guest1-1793595336.testnet,attended,2026-11-02T04:56:40.000Z,0.1,7ij9J5qUDfXd4iprguGNPmyMbe6KrWvuKwytjVsnR5gr,,,,0.2,2026-11-02T05:00:00.000Z,5d5HTC8v9vAzPSuhed5MJZsGUypyr5GL6Rr4GkWmyBkT,https://testnet.near.rocks/tx/5d5HTC8v9vAzPSuhed5MJZsGUypyr5GL6Rr4GkWmyBkT');
+  assert.equal(lines[2], 'showup-demo-1793595312.testnet,near-testnet,guest2-1793595336.testnet,no_show_forfeited,2026-11-02T04:56:50.000Z,0.1,BoosPz7CHKaQppN1RgfBH5i82KrSfEtR3RGabsn7SaHe,,,,0,,,https://testnet.near.rocks/tx/BoosPz7CHKaQppN1RgfBH5i82KrSfEtR3RGabsn7SaHe');
 });
 test('ledger rows: cancel refunds, unsettled payouts blank, host dust row, missing txs blank', () => {
   const info = { host: 'host.testnet', deposit: (10n ** 24n).toString(), settled: false };
@@ -100,7 +100,7 @@ test('ledger rows: cancel refunds, unsettled payouts blank, host dust row, missi
   const txns = [{ transaction_hash: 'CANCELc', predecessor_account_id: 'c.testnet', receiver_account_id: 'ev.testnet', block_timestamp: '1793600000000000000', actions: [{ action: 'FUNCTION_CALL', method: 'cancel' }], outcomes: { status: true } }];
   const rows = ledgerRows('ev.testnet', info, g, txns);
   const c = rows.find((r) => r.guest_account === 'c.testnet');
-  assert.deepEqual([c.status, c.refund_near, c.refund_tx, c.refund_time_utc, c.deposit_tx, c.explorer_url], ['cancelled_refunded', '1', 'CANCELc', '2026-11-02T06:13:20.000Z', '', 'https://testnet.near.rocks/txns/CANCELc']);
+  assert.deepEqual([c.status, c.refund_near, c.refund_tx, c.refund_time_utc, c.deposit_tx, c.explorer_url], ['cancelled_refunded', '1', 'CANCELc', '2026-11-02T06:13:20.000Z', '', 'https://testnet.near.rocks/tx/CANCELc']);
   assert.ok(rows.filter((r) => r.guest_account !== 'c.testnet').every((r) => r.explorer_url === ''), 'no tx hash: explorer_url stays blank, never an address link');
   assert.ok(rows.every((r) => r.payout_near === '' && r.payout_tx === ''));
   assert.equal(rows.find((r) => r.guest_account === 'b.testnet').status, 'rsvp_not_checked_in');
@@ -111,7 +111,7 @@ test('ledger rows: cancel refunds, unsettled payouts blank, host dust row, missi
 });
 test('explorer helpers point at NEAR Rocks; indexTxns accepts v3 signer_account_id', () => {
   assert.equal(NEARBLOCKS_API, 'https://api-testnet.nearblocks.io/v3'); assert.equal(INDEXER_API, NEARBLOCKS_API);
-  assert.equal(explorerTxUrl('H'), 'https://testnet.near.rocks/txns/H'); assert.equal(explorerAccountUrl('a.testnet'), 'https://testnet.near.rocks/accounts/a.testnet');
+  assert.equal(explorerTxUrl('H'), 'https://testnet.near.rocks/tx/H'); assert.equal(explorerAccountUrl('a.testnet'), 'https://testnet.near.rocks/account/a.testnet');
   const idx = indexTxns('ev.testnet', [{ transaction_hash: 'R', signer_account_id: 'g.testnet', receiver_account_id: 'ev.testnet', block_timestamp: '1', actions: [{ action: 'FUNCTION_CALL', method: 'rsvp' }] }]);
   assert.equal(idx.byGuest['g.testnet'].rsvp.hash, 'R');
 });

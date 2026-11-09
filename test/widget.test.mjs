@@ -215,7 +215,7 @@ test('1Click 400 "amount too low" becomes a short NEAR minimum, not raw JSON', a
   assert.match(c.CSS, /\.quote\{[^}]*overflow-wrap:anywhere/);
 });
 test('explorerTx links go to NEAR Rocks; after an rsvp/cancel the widget re-reads get_info for spots left and the bar', () => {
-  assert.equal(c.explorerTx('H'), 'https://testnet.near.rocks/txns/H');
+  assert.equal(c.explorerTx('H'), 'https://testnet.near.rocks/tx/H');
   const src = readFileSync(new URL('../widget/core.mjs', import.meta.url), 'utf8');
   const fn = src.slice(src.indexOf('async function refreshInfo()'), src.indexOf('const say ='));
   assert.match(fn, /viewCall\(eventId, 'get_info'/); assert.match(fn, /Object\.assign\(s, eventSummary\(fresh,/);

@@ -39,7 +39,7 @@ async function load(id) {
       ${p.rows.map(fmtRow).map((r) => `<tr><td class="acct">${e(r.account)}</td><td class="${e(r.status)}">${e(r.status)}</td><td>${e(r.outcome)}</td><td class="num">${e(r.payoutNear)}${r.status === 'host' ? ` <small>(${r.payout} yocto)</small>` : ''}</td></tr>`).join('') || '<tr><td colspan="4">No guests yet</td></tr>'}
       </tbody></table></div>
       <p class="${p.conserved ? 'ok' : 'err'}">Conservation: paid ${formatNear(p.paid, 24)} = held ${formatNear(p.held, 24)} NEAR → ${p.conserved}</p>
-      <p><small>Rule: each attendee gets deposit + floor(deposit × no-shows / attendees); the rounding dust goes to the host. <a href="https://testnet.near.rocks/accounts/${e(id)}" target="_blank" rel="noopener">View on NEAR Rocks</a></small></p>`;
+      <p><small>Rule: each attendee gets deposit + floor(deposit × no-shows / attendees); the rounding dust goes to the host. <a href="https://testnet.near.rocks/account/${e(id)}" target="_blank" rel="noopener">View on NEAR Rocks</a></small></p>`;
     document.getElementById('csv').onclick = () => exportCsv(id, info, guests);
   } catch (err) {
     out.innerHTML = `<p class="err">${e(friendlyRpcError(err))}</p><p><button id="retry" type="button">Retry</button></p>`;

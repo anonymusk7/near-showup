@@ -181,7 +181,7 @@ export function signedFromHash(hash) {
 }
 export const loadWallet = (opts) => import(new URL('vendor/wallet.js', import.meta.url).href).then((m) => m.initWallet(opts));
 export const qrDataUrl = (text) => import(new URL('vendor/qr.js', import.meta.url).href).then((m) => m.toDataURL(text));
-export const explorerTx = (h) => `https://testnet.near.rocks/txns/${h}`; // the testnet.nearblocks.io UI is Cloudflare-blocked
+export const explorerTx = (h) => `https://testnet.near.rocks/tx/${h}`; // the testnet.nearblocks.io UI is Cloudflare-blocked
 
 /**
  * Gasless path (NEP-366): if a relayer is configured and the browser holds the function-call key the wallet added at
