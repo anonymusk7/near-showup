@@ -12,5 +12,6 @@
     "relayer": "node relayer/server.mjs",
     "relayer:demo": "node relayer/demo-testnet.mjs",
     "ui:mobile": "node scripts/ui-mobile.mjs",
+    "browser:testnet": "node scripts/browser-e2e-testnet.mjs",
     "scenarios:testnet": "node scripts/scenarios-testnet.mjs"
   } }

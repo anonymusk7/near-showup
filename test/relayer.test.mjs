@@ -148,6 +148,19 @@ test('client helper builds nonce/height from RPC and POSTs base64 to the relayer
   await assert.rejects(N.relaySignedDelegate('http://r', s, { fetchImpl: async () => ({ ok: false, status: 403, json: async () => ({ ok: false, error: 'nope' }) }) }), /relayer: nope/);
   const store = { getItem: (k) => (k === 'near-api-js:keystore:guest.testnet:testnet' ? SK : null) };
   assert.equal(N.browserFunctionCallKey(store, 'guest.testnet'), SK); assert.equal(N.browserFunctionCallKey(store, 'x.testnet'), null);
+  // Wallet Selector 10 MyNearWallet: {privateKey, contractId, methods} under `functionCallKey` + `signedAccountId` (the legacy entry is removed)
+  const ws10 = (acct, fk) => ({ getItem: (k) => (k === 'signedAccountId' ? acct : k === 'functionCallKey' ? JSON.stringify(fk) : null) });
+  const fk = { privateKey: SK, contractId: EV, methods: [] };
+  assert.equal(N.browserFunctionCallKey(ws10('guest.testnet', fk), 'guest.testnet', 'testnet', EV), SK);
+  assert.equal(N.browserFunctionCallKey(ws10('guest.testnet', fk), 'guest.testnet'), SK);
+  assert.equal(N.browserFunctionCallKey(ws10('guest.testnet', fk), 'guest.testnet', 'testnet', 'other.testnet'), null, 'key scoped to another contract');
+  assert.equal(N.browserFunctionCallKey(ws10('other.testnet', fk), 'guest.testnet', 'testnet', EV), null, 'signed in as someone else');
+  assert.equal(N.browserFunctionCallKey(ws10('guest.testnet', { ...fk, privateKey: 'junk' }), 'guest.testnet'), null);
+  assert.equal(N.browserFunctionCallKey({ getItem: (k) => (k === 'functionCallKey' ? '{bad json' : null) }, 'guest.testnet'), null);
+  // decodeTransaction round-trips the unsigned tx the wallet is handed
+  const tx = { signerId: 'guest.testnet', publicKey: N.parseSecretKey(SK).publicKey, nonce: 7n, receiverId: EV, blockHash: new Uint8Array(32).fill(1), actions: [N.actions.functionCall('rsvp', {}, 30n * 10n ** 12n, 10n ** 22n)] };
+  const back = N.decodeTransaction(N.encodeTransaction(tx));
+  assert.deepEqual([back.signerId, back.receiverId, back.nonce, back.actions[0].methodName, back.actions[0].deposit], ['guest.testnet', EV, 7n, 'rsvp', 10n ** 22n]);
 });
 
 test('checkAccessKey: key must be on sender, nonce unused, FC key scoped to receiver + method', () => {

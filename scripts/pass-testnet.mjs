@@ -5,7 +5,7 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import * as P from '../widget/pass.mjs';
 import { ed25519, b58decode } from '../widget/vendor/crypto.js';
 import { RPC_FALLBACKS } from '../widget/core.mjs';
-const guest = process.argv[2], event = process.argv[3] || 'ethdenver-side.showup-factory-1793597558.testnet';
+const guest = process.argv[2], event = process.argv[3] || 'judges-2026.showup-factory-1793597558.testnet';
 const cred = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.near-credentials/testnet', `${guest}.json`), 'utf8'));
 const sk = b58decode(cred.private_key.replace('ed25519:', '')).slice(0, 32);
 const req = P.newPassRequest({ event, guest });

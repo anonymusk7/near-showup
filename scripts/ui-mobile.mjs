@@ -22,7 +22,7 @@ const PAGES = [
   ['dash-settled', '/dashboard/?event=showup-demo-1793595312.testnet', RPC_DOWN],
   ['dash-gasless', `/dashboard/?event=gasless-1793775606.${FACTORY}`, RPC_DOWN],
   ['dash-empty', '/dashboard/'],
-  ['checkin', `/dashboard/checkin.html?event=ethdenver-side.${FACTORY}`, RPC_DOWN],
+  ['checkin', `/dashboard/checkin.html?event=judges-2026.${FACTORY}`, RPC_DOWN],
 ];
 mkdirSync(OUT, { recursive: true });
 

@@ -185,7 +185,7 @@ export const explorerTx = (h) => `https://testnet.nearblocks.io/txns/${h}`;
 
 /**
  * Gasless path (NEP-366): if a relayer is configured and the browser holds the function-call key the wallet added at
- * sign-in (MyNearWallet keeps it in localStorage), sign a DelegateAction with it and let the relayer pay the gas.
+ * sign-in (MyNearWallet keeps it in localStorage as `functionCallKey`), sign a DelegateAction with it and let the relayer pay the gas.
  * Returns {hash, gasless: true}, or null when this path is unavailable. Throws if the relayer refused; callers then
  * fall back to a normal wallet-signed transaction.
  */
@@ -193,7 +193,7 @@ export async function gaslessCall({ relayer, accountId, receiverId, methodName, 
   loadNep366 = () => import(new URL('../lib/nep366.mjs', import.meta.url).href) }) {
   if (!relayer || !accountId) return null;
   const N = await loadNep366();
-  const secretKey = N.browserFunctionCallKey(storage, accountId);
+  const secretKey = N.browserFunctionCallKey(storage, accountId, 'testnet', receiverId);
   if (!secretKey) return null;
   const signed = await N.signedDelegateCall({ senderId: accountId, secretKey, receiverId, methodName, args, fetchImpl, ...(rpc ? { rpc } : {}) });
   const out = await N.relaySignedDelegate(relayer, signed, { fetchImpl });

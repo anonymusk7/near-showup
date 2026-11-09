@@ -35,7 +35,7 @@ import { viewCall, escapeHtml as e, parseCheckinPayload, checkinCheck, loadWalle
 import { isPass, verifyPass, rpcAccessKey } from '../widget/pass.mjs';
 const seen = new Set(); // replay cache for this door
 const q = new URLSearchParams(location.search);
-const EVENT = q.get('event') || 'ethdenver-side.showup-factory-1793597558.testnet';
+const EVENT = q.get('event') || 'judges-2026.showup-factory-1793597558.testnet';
 const RELAYER = q.get('relayer') || null; // e.g. http://localhost:3030 (pnpm relayer)
 const $ = (id) => document.getElementById(id);
 // Can't run without the event: explain why (Look up stays disabled) and stop evaluating this module without an uncaught error.

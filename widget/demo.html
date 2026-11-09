@@ -7,12 +7,24 @@
 <h1>ShowUp widget demo</h1>
 <p>Any event page can embed a ShowUp event with one tag:
 <code>&lt;script src="/widget/widget.js" data-event="EVENT.testnet"&gt;&lt;/script&gt;</code>.
-Event data comes from live testnet RPC view calls. The quote is a live 1Click dry quote.</p>
+Event data comes from live testnet RPC view calls. The quote is a live 1Click dry quote.
+Add <code>?relayer=http://localhost:3030</code> (with <code>pnpm relayer</code> running) to cancel gaslessly, or <code>?event=&lt;account&gt;</code> to show another event.</p>
 <div class="row">
-  <div><h3>Live event (created by the factory)</h3>
-    <script src="/widget/widget.js" data-event="ethdenver-side.showup-factory-1793597558.testnet"></script></div>
-  <div><h3>Past event (already settled)</h3>
-    <script src="/widget/widget.js" data-event="showup-demo-1793595312.testnet"></script></div>
+  <div><h3>Live event (created by the factory, RSVP open until 20 Dec 2026)</h3><div id="live"></div></div>
+  <div><h3>Past event (already settled)</h3><div id="past"></div></div>
 </div>
-<p><a href="/dashboard/?event=ethdenver-side.showup-factory-1793597558.testnet">Host dashboard →</a></p>
+<p><a id="dash" href="/dashboard/?event=judges-2026.showup-factory-1793597558.testnet">Host dashboard →</a></p>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search), ACCT = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
+  var live = q.get('event') && ACCT.test(q.get('event')) ? q.get('event') : 'judges-2026.showup-factory-1793597558.testnet';
+  var relayer = /^https?:\/\/[^\s"'<>]+$/.test(q.get('relayer') || '') ? q.get('relayer') : '';
+  document.getElementById('dash').href = '/dashboard/?event=' + encodeURIComponent(live);
+  [['#live', live], ['#past', 'showup-demo-1793595312.testnet']].forEach(function (x) {
+    var s = document.createElement('script'); s.src = '/widget/widget.js'; s.dataset.event = x[1]; s.dataset.target = x[0];
+    if (relayer) s.dataset.relayer = relayer;
+    document.body.appendChild(s);
+  });
+})();
+</script>
 </body></html>
