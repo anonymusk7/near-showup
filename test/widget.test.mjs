@@ -66,7 +66,7 @@ test('1Click dry quote request asks for exactly the deposit in wNEAR', async () 
 test('card renders info and escapes untrusted strings', () => {
   const s = c.eventSummary(info(), 50n), html = c.renderCard('<img src=x onerror=alert(1)>.testnet', s);
   assert.ok(!html.includes('<img')); assert.ok(html.includes('&lt;img'));
-  assert.match(html, /data-k="deposit">0\.1 NEAR/); assert.match(html, /data-k="spots">7</); assert.match(html, /RSVP: lock 0\.1 NEAR/);
+  assert.match(html, /data-k="deposit">0\.1 NEAR/); assert.match(html, /data-k="spots">7</);
   const done = c.renderCard('e.testnet', c.eventSummary(info({ settled: true }), 50n));
   assert.match(done, /disabled>Settled/); assert.ok(!done.includes('<select'), 'no quote preview once RSVP is closed'); assert.match(done, /RSVPs are closed/);
   assert.equal((html.match(/<option/g) || []).length, c.ORIGINS.length);
@@ -179,6 +179,15 @@ test('onboarding hint for new users and hidden empty elements', () => {
   assert.match(c.CSS, /\[hidden\],\.note:empty\{display:none!important\}/);
   assert.match(c.CSS, /\.hint\{[^}]*overflow-wrap:anywhere/);
 });
+test('signed-out first paint: button says sign in (what a click does) and the new-user hint is shown', () => {
+  const s = c.eventSummary(info(), 50n), html = c.renderCard('ev.testnet', s);
+  assert.equal(c.guestAction(s, null, null).kind, 'signin');
+  assert.match(html, /<button class="rsvp" >Sign in with NEAR wallet to RSVP<\/button>/);
+  assert.ok(!html.includes('RSVP: lock'), 'no "lock X NEAR" label before a wallet is signed in');
+  assert.match(html, /<p class="hint">New to NEAR\?/);
+  const full = c.renderCard('ev.testnet', c.eventSummary(info({ active: 10 }), 50n));
+  assert.match(full, /<button class="rsvp" disabled>Event full<\/button>/); assert.ok(!full.includes('class="hint"'), 'no sign-in hint when nobody can RSVP');
+});
 test('gasless failures (403 / 503 outage / out of funds) fall back to the wallet', async () => {
   const { b58encode } = await import('../widget/vendor/crypto.js');
   const sk = 'ed25519:' + b58encode(new Uint8Array(32).fill(3));
@@ -196,4 +205,12 @@ test('gasless failures (403 / 503 outage / out of funds) fall back to the wallet
   assert.deepEqual(await c.gaslessOrWallet(async () => ({ hash: 'G', gasless: true }), () => assert.fail('wallet not needed')), { hash: 'G', gasless: true });
   assert.equal(await c.gaslessOrWallet(() => null, async () => 'wallet'), 'wallet');
   assert.equal(await c.gaslessOrWallet(() => { throw new Error('sync'); }, async () => 'wallet', () => {}), 'wallet');
+});
+test('1Click 400 "amount too low" becomes a short NEAR minimum, not raw JSON', async () => {
+  const c = await import('../widget/core.mjs');
+  const raw = '1Click quote failed: 400 {"message":"Amount is too low for bridge, try at least 41925497128212346024635","correlationId":"95b8fb73-476c-4f77-8473-a6253f63169b","timestamp":"2026-11-09T05:27:26.903Z"}';
+  const f = c.friendlyQuoteError(new Error(raw));
+  assert.match(f, /below 1Click's minimum .*about 0\.0419 NEAR/); assert.ok(!f.includes('correlationId'));
+  assert.equal(c.friendlyQuoteError(new Error('1Click quote failed: 400 {"message":"tokenIn is not valid","correlationId":"x"}')), '1Click: tokenIn is not valid');
+  assert.match(c.CSS, /\.quote\{[^}]*overflow-wrap:anywhere/);
 });

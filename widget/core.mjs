@@ -10,7 +10,12 @@ export function friendlyQuoteError(err) {
   const m = String(err?.message || err);
   if (/Failed to fetch|NetworkError|fetch failed|ECONN|ENOTFOUND|\b5\d\d\b|<html|<!DOCTYPE/i.test(m))
     return '1Click quotes are unavailable right now (the service looks down). You can still RSVP by paying in NEAR.';
-  return m.length > 200 ? m.slice(0, 200) + '…' : m;
+  // 1Click answers 4xx with JSON {message, correlationId, timestamp}: show only the message, never the raw body
+  const j = /\{[\s\S]*/.exec(m), msg = (() => { try { return JSON.parse(j[0]).message; } catch { const x = /"message"\s*:\s*"([^"]*)"/.exec(m); return x?.[1]; } })();
+  const low = /amount is too low[^0-9]*(\d+)/i.exec(msg || m);
+  if (low) return `This deposit is below 1Click's minimum for a cross-chain payment (about ${formatNear(low[1], 4)} NEAR). Pay the deposit in NEAR instead.`;
+  const t = msg ? `1Click: ${msg}` : m;
+  return t.length > 200 ? t.slice(0, 200) + '…' : t;
 }
 /** Short, human error for a failed NEAR RPC view (event load, status read). */
 export function friendlyRpcError(err) {
@@ -127,7 +132,7 @@ export const isAccountId = (s) => typeof s === 'string' && ACCOUNT_RE.test(s);
 
 /** What the guest's main button should do, given the event, their on-chain status and whether a wallet is signed in. */
 export function guestAction(s, status, accountId) {
-  if (!accountId) return s.canRsvp ? { kind: 'signin', label: 'Sign in with NEAR wallet to RSVP' } : { kind: 'none', label: s.phaseLabel, disabled: true };
+  if (!accountId) return s.canRsvp ? { kind: 'signin', label: 'Sign in with NEAR wallet to RSVP' } : { kind: 'none', label: s.spotsLeft === 0 && s.phase === 'open' ? 'Event full' : s.phaseLabel, disabled: true };
   if (status === 'CheckedIn') return { kind: 'none', label: 'Checked in ✓', disabled: true, note: 'You showed up. Your deposit plus a share of the no-show pool is paid out at settle.' };
   if (status === 'Rsvp') {
     if (s.phase === 'open') return { kind: 'cancel', label: `Cancel RSVP (refund ${s.depositNear} NEAR)`, note: 'You\'re in. Show the QR code at the door to check in.' };
@@ -207,6 +212,7 @@ export function renderCard(eventId, s) {
   const e = escapeHtml;
   const opts = ORIGINS.map((o) => `<option value="${o.id}">${e(o.label)}</option>`).join('');
   const pct = s.capacity ? Math.round((100 * s.active) / s.capacity) : 0;
+  const a = guestAction(s, null, null); // first paint is always signed out: clicking opens the wallet sign-in
   return `<div class="card">
   <div class="head"><strong>${e(eventId)}</strong><span class="pill ${s.phase}">${e(s.phaseLabel)}</span></div>
   <dl>
@@ -217,8 +223,8 @@ export function renderCard(eventId, s) {
   <div class="bar" title="${s.active} of ${s.capacity} spots taken"><i style="width:${pct}%"></i></div>
   <p class="fine">Show up and get your deposit back plus a share of the no-shows' deposits. ${s.phase === 'open' ? `You can cancel for a full refund until ${e(s.cancelDeadline.replace('T', ' ').slice(0, 16))} UTC.` : 'RSVPs are closed.'}</p>
   <div class="who" hidden></div>
-  <button class="rsvp" ${s.canRsvp ? '' : 'disabled'}>${s.canRsvp ? `RSVP: lock ${e(s.depositNear)} NEAR` : e(s.phaseLabel)}</button>
-  ${s.canRsvp ? `<p class="hint">${ONBOARDING_HINT}</p>` : ''}
+  <button class="rsvp" ${a.disabled ? 'disabled' : ''}>${e(a.label)}</button>
+  ${a.kind === 'signin' ? `<p class="hint">${ONBOARDING_HINT}</p>` : ''}
   <p class="note" hidden></p>
   <div class="qr" hidden></div>
   ${s.canRsvp ? `<details class="cli"><summary>Prefer a terminal?</summary><pre class="cmd"></pre></details>` : ''}
@@ -249,7 +255,7 @@ button.retry{margin-top:10px}
 details.cli{margin-top:10px;font-size:12px;color:#475569}summary{cursor:pointer}
 .cmd{white-space:pre-wrap;word-break:break-all;font-size:11px;background:#f8fafc;padding:8px;border-radius:8px}
 .pay{margin-top:12px;font-size:13px;border-top:1px solid #f1f5f9;padding-top:10px}select{margin-left:4px;font:inherit;padding:2px 4px;border-radius:6px;border:1px solid #cbd5e1}
-.quote{margin-top:6px;color:#334155}.err{color:#b91c1c}`;
+.quote{margin-top:6px;color:#334155;overflow-wrap:anywhere}.err{color:#b91c1c}`;
 
 /** DOM glue: renders into a shadow root and wires wallet sign-in, RSVP/cancel, the guest QR and the quote selector. */
 export async function mountWidget(host, eventId, { rpc, relayer, fetchImpl = fetch } = {}) {
