@@ -335,9 +335,11 @@ export async function mountWidget(host, eventId, { rpc, relayer, fetchImpl = fet
       const out = await gaslessOrWallet(() => (action.kind === 'cancel' && relayer
         ? gaslessCall({ relayer, accountId: w.accountId(), receiverId: eventId, methodName: 'cancel', rpc, fetchImpl }) : null),
       () => w.call(eventId, action.kind === 'rsvp' ? 'rsvp' : 'cancel', {}, { deposit: action.kind === 'rsvp' ? s.deposit : '0' }));
-      const h = out?.hash ?? out?.transaction?.hash;
+      const h = out?.hash ?? out?.transaction?.hash, did = action.kind;
       await render(w.accountId());
-      if (h) note.insertAdjacentHTML('beforeend', ` <a href="${explorerTx(h)}" target="_blank" rel="noreferrer">View tx</a>${out?.gasless ? ' (gasless: the relayer paid the gas)' : ''}`);
+      // render() clears the note when the new state has none (after a cancel), so confirm explicitly and keep the tx link visible
+      if (did === 'cancel' && !note.textContent) say(`Cancelled. Your ${s.depositNear} NEAR deposit was refunded.`);
+      if (h) { note.hidden = false; note.insertAdjacentHTML('beforeend', ` <a href="${explorerTx(h)}" target="_blank" rel="noreferrer">View tx</a>${out?.gasless ? ' (gasless: the relayer paid the gas)' : ''}`); }
     } catch (e) { say(e.message || String(e), true); btn.disabled = false; }
   });
   if (walletWasUsed(globalThis.localStorage, globalThis.location?.search)) {

@@ -25,7 +25,8 @@ const FACTORY = 'showup-factory-1793597558.testnet', HOST = 'showup-rhost-179377
 const GA = 'showup-rguest-a-1793775606.testnet', GB = 'showup-rguest-b-1793775606.testnet', GC = 'showup-guest-1793597596.testnet';
 const CANCEL_S = Number(process.env.CANCEL_S || 240), CHECKIN_S = Number(process.env.CHECKIN_S || 120);
 const T = Math.floor(Date.now() / 1000), DEPOSIT = 10n ** 22n, MILLI = 10n ** 21n;
-const NAME = `ui-${T}`, EV = `${NAME}.${FACTORY}`, PORT = Number(process.env.RELAYER_PORT || 3033), RELAY_URL = `http://127.0.0.1:${PORT}`;
+const NAME = `ui-${T}`, EV = `${NAME}.${FACTORY}`, PORT = Number(process.env.RELAYER_PORT || 0); // 0 = any free port
+let RELAY_URL;
 const logFile = path.join(ROOT, 'docs', `testnet-browser-e2e-${new Date().toISOString().slice(0, 10)}.log`);
 const lines = []; let pass = 0, fail = 0;
 const log = (s) => { console.log(s); lines.push(s); fs.writeFileSync(logFile, lines.join('\n') + '\n'); };
@@ -83,10 +84,12 @@ try {
     await until(async () => near.view(EV, 'get_info'), 30_000);
     for (const g of [gA, gB, gC]) await ok(`1 rsvp ${g.accountId.split('.')[0]}`, g, EV, fc('rsvp', {}, DEPOSIT), 'locked 0.01 NEAR');
   });
+  if (fail) throw new Error('setup failed');
   const [skA, skB, skH] = [await signInKey(gA), await signInKey(gB), await signInKey(host)];
   const chain = liveChain(relayer);
   server = serve({ port: PORT, chain, info: { relayer: RELAYER, factory: FACTORY, network: 'testnet' }, relay: createRelay({ factory: FACTORY, relayerId: RELAYER, chain, log: (...a) => log(`#   [relayer] ${a.join(' ').slice(0, 240)}`) }) });
   await new Promise((r, j) => { server.once('listening', r); server.once('error', j); });
+  RELAY_URL = `http://127.0.0.1:${server.address().port}`;
   browser = await chromium.launch({ executablePath: CHROME, args: ['--no-sandbox'] });
 
   await step('2 widget signed in (guest A)', async () => {
@@ -169,7 +172,7 @@ try {
     check('7 CSV: C attended, paid 0.01', byGuest[GC]?.[3] === 'attended' && byGuest[GC]?.[10] === '0.01', JSON.stringify(byGuest[GC] || null).slice(0, 200));
     await ctx.close();
   });
-} finally {
+} catch (e) { check('fatal', false, String(e.stack || e).replace(/\s+/g, ' ').slice(0, 400)); } finally {
   log(`SUMMARY pass ${pass} fail ${fail}`);
   await browser?.close(); server?.close();
   process.exit(fail ? 1 : 0);
